@@ -3,11 +3,13 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Payment, PaymentStatus, CryptoType } from './entities/payment.entity';
+import { Payment, PaymentStatus, CryptoType, PaymentEnvironment } from './entities/payment.entity';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PricingService } from '../pricing/pricing.service';
-import { BlockchainService } from '../blockchain/blockchain.service';
-import { MerchantsService } from '../merchants/merchants.service';
+import { PaymentAddressService } from './address/payment-address.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
+import { PaymentsGateway } from './payments.gateway';
+import { AuthContext } from '../../common/interfaces/auth-context.interface';
 import * as QRCode from 'qrcode';
 
 @Injectable()
@@ -18,45 +20,53 @@ export class PaymentsService {
         @InjectRepository(Payment)
         private paymentsRepo: Repository<Payment>,
         private pricingService: PricingService,
-        private blockchainService: BlockchainService,
-        private merchantsService: MerchantsService,
+        private paymentAddressService: PaymentAddressService,
+        private webhooksService: WebhooksService,
+        private paymentsGateway: PaymentsGateway,
         private configService: ConfigService,
     ) { }
 
     async createPayment(
-        merchantId: string,
+        auth: AuthContext,
         dto: CreatePaymentDto,
     ): Promise<Payment> {
-        const merchant = await this.merchantsService.findById(merchantId);
+        const organizationId = auth.organizationId;
+        const idempotencyKey = dto.idempotencyKey;
 
-        // Check merchant accepts this crypto
-        if (!merchant.acceptedCryptos.includes(dto.cryptoType.replace('_ERC20', ''))) {
-            throw new BadRequestException(
-                `Merchant does not accept ${dto.cryptoType}`,
-            );
+        // 1. Idempotency check
+        if (idempotencyKey) {
+            const existingPayment = await this.paymentsRepo.findOne({
+                where: { organizationId, idempotencyKey },
+            });
+            if (existingPayment) {
+                this.logger.log(`Idempotent payment match returned for key ${idempotencyKey} (Payment: ${existingPayment.id})`);
+                return existingPayment;
+            }
         }
 
-        // Get current exchange rate
+        // 2. Exchange rate calculation with slippage
         const exchangeRate = await this.pricingService.getExchangeRate(
             dto.cryptoType,
             'AUD',
         );
 
-        // Calculate crypto amount with slippage buffer
-        const slippage =
-            this.configService.get<number>('pricing.slippagePercent') / 100;
-        const cryptoAmount = dto.audAmount / exchangeRate;
-        const cryptoAmountWithBuffer = cryptoAmount * (1 - slippage);
+        const slippagePercent = this.configService.get<number>('pricing.slippagePercent') ?? 1.0;
+        const slippage = slippagePercent / 100;
+        const baseCryptoAmount = dto.audAmount / exchangeRate;
+        const cryptoAmountWithBuffer = baseCryptoAmount * (1 - slippage);
 
-        // Get payment address (merchant's wallet for MVP)
-        const paymentAddress = this.getPaymentAddress(merchant, dto.cryptoType);
-        if (!paymentAddress) {
-            throw new BadRequestException(
-                `No wallet configured for ${dto.cryptoType}`,
-            );
-        }
+        // 3. Deposit address allocation
+        const addressResult = await this.paymentAddressService.getAddressForPayment({
+            organizationId,
+            merchantId: auth.merchantId,
+            cryptoType: dto.cryptoType,
+            network: dto.network || 'mainnet',
+            orderReference: dto.orderReference,
+        });
 
-        // Generate QR code
+        const paymentAddress = addressResult.address;
+
+        // 4. Generate QR code
         const qrData = this.generateQrData(
             dto.cryptoType,
             paymentAddress,
@@ -68,20 +78,25 @@ export class PaymentsService {
             color: { dark: '#000000', light: '#ffffff' },
         });
 
-        // Calculate expiry
-        const timeoutMinutes = this.configService.get<number>(
-            'blockchain.paymentTimeoutMinutes',
-        );
+        // 5. Compute expiry
+        const timeoutMinutes = this.configService.get<number>('blockchain.paymentTimeoutMinutes') ?? 15;
         const expiresAt = new Date(Date.now() + timeoutMinutes * 60 * 1000);
 
-        // Determine required confirmations
-        const requiredConfirmations =
-            this.configService.get<number>(
-                `blockchain.confirmationsRequired.${dto.cryptoType.replace('_ERC20', '')}`,
-            ) || 2;
+        // 6. Confirmations required
+        const requiredConfirmations = this.getRequiredConfirmations(dto.cryptoType);
+
+        const environment = (dto.environment || auth.environment || PaymentEnvironment.LIVE) as PaymentEnvironment;
+        const network = dto.network || (environment === PaymentEnvironment.TEST ? 'sepolia' : 'mainnet');
 
         const payment = this.paymentsRepo.create({
-            merchantId,
+            organizationId,
+            merchantId: auth.merchantId,
+            locationId: dto.locationId || auth.locationId,
+            deviceId: dto.deviceId || auth.deviceId,
+            integrationId: dto.integrationId,
+            network,
+            environment,
+            idempotencyKey,
             audAmount: dto.audAmount,
             cryptoAmount: parseFloat(cryptoAmountWithBuffer.toFixed(8)),
             cryptoType: dto.cryptoType,
@@ -91,6 +106,7 @@ export class PaymentsService {
             status: PaymentStatus.PENDING,
             orderReference: dto.orderReference,
             description: dto.description,
+            metadata: dto.metadata || {},
             webhookUrl: dto.webhookUrl,
             expiresAt,
             requiredConfirmations,
@@ -98,12 +114,14 @@ export class PaymentsService {
 
         const saved = await this.paymentsRepo.save(payment);
 
-        // Start monitoring this payment
-        this.blockchainService.startMonitoring(saved);
-
         this.logger.log(
-            `Payment created: ${saved.id} | ${dto.audAmount} AUD = ${cryptoAmountWithBuffer.toFixed(8)} ${dto.cryptoType}`,
+            `Payment created: ${saved.id} | ${dto.audAmount} AUD = ${cryptoAmountWithBuffer.toFixed(8)} ${dto.cryptoType} | Org: ${organizationId}`,
         );
+
+        // Emit payment.created event asynchronously to webhooks
+        this.webhooksService.dispatchEvent(organizationId, 'payment.created', this.formatPaymentEvent(saved)).catch((err) => {
+            this.logger.error(`Failed to dispatch payment.created webhook: ${err.message}`);
+        });
 
         return saved;
     }
@@ -127,18 +145,22 @@ export class PaymentsService {
             status: payment.status,
             confirmations: payment.confirmations,
             requiredConfirmations: payment.requiredConfirmations,
-            txHash: payment.txHash,
+            txHash: payment.txHash || null,
         };
     }
 
-    async getMerchantPayments(
-        merchantId: string,
+    async getOrganizationPayments(
+        organizationId: string,
         page = 1,
         limit = 20,
         status?: PaymentStatus,
+        locationId?: string,
+        environment?: PaymentEnvironment,
     ) {
-        const where: any = { merchantId };
+        const where: any = { organizationId };
         if (status) where.status = status;
+        if (locationId) where.locationId = locationId;
+        if (environment) where.environment = environment;
 
         const [payments, total] = await this.paymentsRepo.findAndCount({
             where,
@@ -168,10 +190,32 @@ export class PaymentsService {
         if (additionalData) {
             Object.assign(payment, additionalData);
         }
-        if (status === PaymentStatus.CONFIRMED) {
+        if (status === PaymentStatus.CONFIRMED && !payment.confirmedAt) {
             payment.confirmedAt = new Date();
         }
-        return this.paymentsRepo.save(payment);
+
+        const updated = await this.paymentsRepo.save(payment);
+
+        // Notify real-time WebSockets
+        this.paymentsGateway.notifyPaymentUpdate(payment.id, payment.organizationId, {
+            status: updated.status,
+            txHash: updated.txHash,
+            confirmations: updated.confirmations,
+            requiredConfirmations: updated.requiredConfirmations,
+            receivedAmount: updated.receivedAmount,
+        });
+
+        // Dispatch signed webhook
+        const eventName = `payment.${status}`;
+        this.webhooksService.dispatchEvent(
+            payment.organizationId,
+            eventName,
+            this.formatPaymentEvent(updated),
+        ).catch((err) => {
+            this.logger.error(`Failed to dispatch ${eventName} webhook: ${err.message}`);
+        });
+
+        return updated;
     }
 
     async expireOldPayments(): Promise<void> {
@@ -183,23 +227,14 @@ export class PaymentsService {
         });
 
         for (const payment of expired) {
-            payment.status = PaymentStatus.EXPIRED;
-            await this.paymentsRepo.save(payment);
+            await this.updatePaymentStatus(payment.id, PaymentStatus.EXPIRED);
             this.logger.log(`Payment expired: ${payment.id}`);
         }
     }
 
-    private getPaymentAddress(merchant: any, cryptoType: CryptoType): string {
-        switch (cryptoType) {
-            case CryptoType.ETH:
-            case CryptoType.USDT_ERC20:
-            case CryptoType.USDC_ERC20:
-                return merchant.ethWalletAddress;
-            case CryptoType.BTC:
-                return merchant.btcWalletAddress;
-            default:
-                return null;
-        }
+    private getRequiredConfirmations(cryptoType: CryptoType): number {
+        const key = cryptoType.replace('_ERC20', '');
+        return this.configService.get<number>(`blockchain.confirmationsRequired.${key}`) ?? 2;
     }
 
     private generateQrData(
@@ -214,10 +249,35 @@ export class PaymentsService {
                 return `bitcoin:${address}?amount=${amount.toFixed(8)}`;
             case CryptoType.USDT_ERC20:
             case CryptoType.USDC_ERC20:
-                // ERC20 tokens need contract interaction, simplified here
                 return `ethereum:${address}?value=0&data=${amount}`;
             default:
                 return `${address}`;
         }
+    }
+
+    private formatPaymentEvent(payment: Payment): Record<string, any> {
+        return {
+            id: payment.id,
+            organizationId: payment.organizationId,
+            locationId: payment.locationId,
+            deviceId: payment.deviceId,
+            orderReference: payment.orderReference,
+            audAmount: payment.audAmount,
+            cryptoAmount: payment.cryptoAmount,
+            cryptoType: payment.cryptoType,
+            exchangeRate: payment.exchangeRate,
+            paymentAddress: payment.paymentAddress,
+            status: payment.status,
+            txHash: payment.txHash,
+            confirmations: payment.confirmations,
+            requiredConfirmations: payment.requiredConfirmations,
+            receivedAmount: payment.receivedAmount,
+            environment: payment.environment,
+            network: payment.network,
+            metadata: payment.metadata,
+            createdAt: payment.createdAt,
+            confirmedAt: payment.confirmedAt,
+            expiresAt: payment.expiresAt,
+        };
     }
 }

@@ -1,244 +1,111 @@
 // src/modules/blockchain/blockchain.service.ts
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In, MoreThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { EthereumProvider } from './providers/ethereum.provider';
 import { BitcoinProvider } from './providers/bitcoin.provider';
 import { Payment, PaymentStatus, CryptoType } from '../payments/entities/payment.entity';
-
-// These will be injected from payments module via forwardRef
 import { PaymentsService } from '../payments/payments.service';
-import { PaymentsGateway } from '../payments/payments.gateway';
-
-interface MonitoredPayment {
-    payment: Payment;
-    startTime: number;
-}
 
 @Injectable()
 export class BlockchainService {
     private readonly logger = new Logger(BlockchainService.name);
-    private monitoredPayments: Map<string, MonitoredPayment> = new Map();
+    private isChecking = false;
 
     constructor(
+        @InjectRepository(Payment)
+        private paymentsRepo: Repository<Payment>,
         private ethereumProvider: EthereumProvider,
         private bitcoinProvider: BitcoinProvider,
-        private configService: ConfigService,
+        @Inject(forwardRef(() => PaymentsService))
+        private paymentsService: PaymentsService,
     ) { }
 
-    // These are set after module initialization to avoid circular deps
-    private paymentsService: PaymentsService;
-    private paymentsGateway: PaymentsGateway;
-
-    setDependencies(
-        paymentsService: PaymentsService,
-        paymentsGateway: PaymentsGateway,
-    ) {
-        this.paymentsService = paymentsService;
-        this.paymentsGateway = paymentsGateway;
-    }
-
-    startMonitoring(payment: Payment): void {
-        this.monitoredPayments.set(payment.id, {
-            payment,
-            startTime: Date.now(),
-        });
-        this.logger.log(
-            `Started monitoring payment ${payment.id} for ${payment.cryptoAmount} ${payment.cryptoType} to ${payment.paymentAddress}`,
-        );
-    }
-
-    stopMonitoring(paymentId: string): void {
-        this.monitoredPayments.delete(paymentId);
-        this.logger.log(`Stopped monitoring payment ${paymentId}`);
-    }
-
     @Cron(CronExpression.EVERY_10_SECONDS)
-    async checkPayments(): Promise<void> {
-        if (this.monitoredPayments.size === 0) return;
+    async checkPendingPayments(): Promise<void> {
+        if (this.isChecking) return;
+        this.isChecking = true;
 
-        this.logger.debug(
-            `Checking ${this.monitoredPayments.size} monitored payments...`,
-        );
+        try {
+            // Stateless database lookup: find all active unconfirmed payments
+            const activePayments = await this.paymentsRepo.find({
+                where: {
+                    status: In([PaymentStatus.PENDING, PaymentStatus.DETECTED, PaymentStatus.CONFIRMING]),
+                    expiresAt: MoreThan(new Date()),
+                },
+                take: 50,
+                order: { lastCheckedAt: 'ASC' },
+            });
 
-        for (const [paymentId, monitored] of this.monitoredPayments) {
-            try {
-                await this.checkSinglePayment(monitored);
-            } catch (error) {
-                this.logger.error(
-                    `Error checking payment ${paymentId}: ${error.message}`,
-                );
+            if (activePayments.length === 0) {
+                // Expire any stale payments
+                await this.paymentsService.expireOldPayments();
+                return;
             }
-        }
-    }
 
-    private async checkSinglePayment(
-        monitored: MonitoredPayment,
-    ): Promise<void> {
-        const { payment } = monitored;
+            this.logger.debug(`Stateless monitoring checking ${activePayments.length} active payments...`);
 
-        // Check if expired
-        if (new Date() > new Date(payment.expiresAt)) {
-            await this.handleExpired(payment);
-            return;
-        }
-
-        const provider = this.getProvider(payment.cryptoType);
-
-        if (
-            payment.status === PaymentStatus.PENDING ||
-            payment.status === PaymentStatus.DETECTED
-        ) {
-            // Check for incoming transactions
-            const transactions =
-                await provider.getTransactionsForAddress(
-                    payment.paymentAddress,
-                    Math.floor(monitored.startTime / 1000),
-                );
-
-            for (const tx of transactions) {
-                // Check if this transaction matches the expected amount
-                // Allow 1% tolerance
-                const tolerance = payment.cryptoAmount * 0.01;
-                const amountMatch =
-                    Math.abs(tx.amount - payment.cryptoAmount) <= tolerance;
-
-                if (
-                    amountMatch &&
-                    tx.to?.toLowerCase() ===
-                    payment.paymentAddress.toLowerCase()
-                ) {
-                    if (
-                        payment.status === PaymentStatus.PENDING &&
-                        tx.confirmations === 0
-                    ) {
-                        await this.handleDetected(payment, tx.hash);
-                    } else if (tx.confirmations > 0) {
-                        await this.handleConfirming(
-                            payment,
-                            tx.hash,
-                            tx.confirmations,
-                        );
-
-                        if (
-                            tx.confirmations >=
-                            payment.requiredConfirmations
-                        ) {
-                            await this.handleConfirmed(
-                                payment,
-                                tx.hash,
-                                tx.amount,
-                            );
-                        }
-                    }
-                    break;
+            for (const payment of activePayments) {
+                try {
+                    await this.checkPayment(payment);
+                } catch (err) {
+                    this.logger.error(`Error monitoring payment ${payment.id}: ${err.message}`);
                 }
             }
+
+            // Also check for expired payments
+            await this.paymentsService.expireOldPayments();
+        } finally {
+            this.isChecking = false;
         }
     }
 
-    private async handleDetected(
-        payment: Payment,
-        txHash: string,
-    ): Promise<void> {
-        this.logger.log(
-            `Payment ${payment.id} detected in mempool: ${txHash}`,
+    private async checkPayment(payment: Payment): Promise<void> {
+        // Mark checked timestamp for distributed coordination
+        payment.lastCheckedAt = new Date();
+        await this.paymentsRepo.save(payment);
+
+        const provider = this.getProvider(payment.cryptoType);
+        const transactions = await provider.getTransactionsForAddress(
+            payment.paymentAddress,
+            undefined,
+            payment.network,
         );
 
-        if (this.paymentsService) {
-            await this.paymentsService.updatePaymentStatus(
-                payment.id,
-                PaymentStatus.DETECTED,
-                { txHash },
-            );
+        for (const tx of transactions) {
+            // Check if transaction matches expected amount (allow 1% slippage tolerance)
+            const tolerance = payment.cryptoAmount * 0.01;
+            const amountMatch = Math.abs(tx.amount - payment.cryptoAmount) <= tolerance;
+
+            if (amountMatch && tx.to?.toLowerCase() === payment.paymentAddress.toLowerCase()) {
+                if (payment.status === PaymentStatus.PENDING && tx.confirmations === 0) {
+                    this.logger.log(`Payment ${payment.id} detected in mempool: ${tx.hash}`);
+                    await this.paymentsService.updatePaymentStatus(
+                        payment.id,
+                        PaymentStatus.DETECTED,
+                        { txHash: tx.hash, receivedAmount: tx.amount },
+                    );
+                } else if (tx.confirmations > 0) {
+                    if (tx.confirmations >= payment.requiredConfirmations) {
+                        this.logger.log(`Payment ${payment.id} CONFIRMED (${tx.confirmations}/${payment.requiredConfirmations}): ${tx.hash}`);
+                        await this.paymentsService.updatePaymentStatus(
+                            payment.id,
+                            PaymentStatus.CONFIRMED,
+                            { txHash: tx.hash, confirmations: tx.confirmations, receivedAmount: tx.amount },
+                        );
+                    } else if (payment.status !== PaymentStatus.CONFIRMING || payment.confirmations !== tx.confirmations) {
+                        this.logger.log(`Payment ${payment.id} confirming: ${tx.confirmations}/${payment.requiredConfirmations}`);
+                        await this.paymentsService.updatePaymentStatus(
+                            payment.id,
+                            PaymentStatus.CONFIRMING,
+                            { txHash: tx.hash, confirmations: tx.confirmations, receivedAmount: tx.amount },
+                        );
+                    }
+                }
+                break;
+            }
         }
-
-        if (this.paymentsGateway) {
-            this.paymentsGateway.notifyPaymentUpdate(payment.id, {
-                status: PaymentStatus.DETECTED,
-                txHash,
-                confirmations: 0,
-            });
-        }
-
-        // Update monitored payment
-        const monitored = this.monitoredPayments.get(payment.id);
-        if (monitored) {
-            monitored.payment.status = PaymentStatus.DETECTED;
-            monitored.payment.txHash = txHash;
-        }
-    }
-
-    private async handleConfirming(
-        payment: Payment,
-        txHash: string,
-        confirmations: number,
-    ): Promise<void> {
-        this.logger.log(
-            `Payment ${payment.id} confirming: ${confirmations}/${payment.requiredConfirmations}`,
-        );
-
-        if (this.paymentsService) {
-            await this.paymentsService.updatePaymentStatus(
-                payment.id,
-                PaymentStatus.CONFIRMING,
-                { txHash, confirmations },
-            );
-        }
-
-        if (this.paymentsGateway) {
-            this.paymentsGateway.notifyPaymentUpdate(payment.id, {
-                status: PaymentStatus.CONFIRMING,
-                txHash,
-                confirmations,
-                requiredConfirmations: payment.requiredConfirmations,
-            });
-        }
-    }
-
-    private async handleConfirmed(
-        payment: Payment,
-        txHash: string,
-        receivedAmount: number,
-    ): Promise<void> {
-        this.logger.log(`Payment ${payment.id} CONFIRMED: ${txHash}`);
-
-        if (this.paymentsService) {
-            await this.paymentsService.updatePaymentStatus(
-                payment.id,
-                PaymentStatus.CONFIRMED,
-                { txHash, receivedAmount },
-            );
-        }
-
-        if (this.paymentsGateway) {
-            this.paymentsGateway.notifyPaymentUpdate(payment.id, {
-                status: PaymentStatus.CONFIRMED,
-                txHash,
-                receivedAmount,
-            });
-        }
-
-        this.stopMonitoring(payment.id);
-    }
-
-    private async handleExpired(payment: Payment): Promise<void> {
-        this.logger.log(`Payment ${payment.id} expired`);
-
-        if (this.paymentsService) {
-            await this.paymentsService.updatePaymentStatus(
-                payment.id,
-                PaymentStatus.EXPIRED,
-            );
-        }
-
-        if (this.paymentsGateway) {
-            this.paymentsGateway.notifyPaymentUpdate(payment.id, {
-                status: PaymentStatus.EXPIRED,
-            });
-        }
-
-        this.stopMonitoring(payment.id);
     }
 
     private getProvider(cryptoType: CryptoType) {

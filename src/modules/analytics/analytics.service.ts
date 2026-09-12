@@ -1,7 +1,7 @@
 // src/modules/analytics/analytics.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Payment, PaymentStatus } from '../payments/entities/payment.entity';
 
 @Injectable()
@@ -11,7 +11,7 @@ export class AnalyticsService {
         private paymentsRepo: Repository<Payment>,
     ) { }
 
-    async getDashboardStats(merchantId: string) {
+    async getDashboardStats(organizationId: string, locationId?: string) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tomorrow = new Date(today);
@@ -27,11 +27,11 @@ export class AnalyticsService {
             recentPayments,
             cryptoBreakdown,
         ] = await Promise.all([
-            this.getStats(merchantId, today, tomorrow),
-            this.getStats(merchantId, thisMonth, nextMonth),
-            this.getAllTimeStats(merchantId),
-            this.getRecentPayments(merchantId, 10),
-            this.getCryptoBreakdown(merchantId),
+            this.getStats(organizationId, today, tomorrow, locationId),
+            this.getStats(organizationId, thisMonth, nextMonth, locationId),
+            this.getAllTimeStats(organizationId, locationId),
+            this.getRecentPayments(organizationId, 10, locationId),
+            this.getCryptoBreakdown(organizationId, locationId),
         ]);
 
         return {
@@ -44,11 +44,12 @@ export class AnalyticsService {
     }
 
     private async getStats(
-        merchantId: string,
+        organizationId: string,
         from: Date,
         to: Date,
+        locationId?: string,
     ) {
-        const result = await this.paymentsRepo
+        const query = this.paymentsRepo
             .createQueryBuilder('payment')
             .select('COUNT(*)', 'totalTransactions')
             .addSelect(
@@ -59,20 +60,25 @@ export class AnalyticsService {
                 'COALESCE(SUM(CASE WHEN payment.status = :confirmed THEN payment.aud_amount ELSE 0 END), 0)',
                 'totalAud',
             )
-            .where('payment.merchant_id = :merchantId', { merchantId })
+            .where('payment.organization_id = :organizationId', { organizationId })
             .andWhere('payment.created_at BETWEEN :from AND :to', { from, to })
-            .setParameter('confirmed', PaymentStatus.CONFIRMED)
-            .getRawOne();
+            .setParameter('confirmed', PaymentStatus.CONFIRMED);
+
+        if (locationId) {
+            query.andWhere('payment.location_id = :locationId', { locationId });
+        }
+
+        const result = await query.getRawOne();
 
         return {
-            totalTransactions: parseInt(result.totalTransactions),
-            confirmedTransactions: parseInt(result.confirmedTransactions),
-            totalAud: parseFloat(result.totalAud),
+            totalTransactions: parseInt(result.totalTransactions, 10) || 0,
+            confirmedTransactions: parseInt(result.confirmedTransactions, 10) || 0,
+            totalAud: parseFloat(result.totalAud) || 0,
         };
     }
 
-    private async getAllTimeStats(merchantId: string) {
-        const result = await this.paymentsRepo
+    private async getAllTimeStats(organizationId: string, locationId?: string) {
+        const query = this.paymentsRepo
             .createQueryBuilder('payment')
             .select('COUNT(*)', 'totalTransactions')
             .addSelect(
@@ -83,31 +89,39 @@ export class AnalyticsService {
                 'COALESCE(SUM(CASE WHEN payment.status = :confirmed THEN payment.aud_amount ELSE 0 END), 0)',
                 'totalAud',
             )
-            .where('payment.merchant_id = :merchantId', { merchantId })
-            .setParameter('confirmed', PaymentStatus.CONFIRMED)
-            .getRawOne();
+            .where('payment.organization_id = :organizationId', { organizationId })
+            .setParameter('confirmed', PaymentStatus.CONFIRMED);
+
+        if (locationId) {
+            query.andWhere('payment.location_id = :locationId', { locationId });
+        }
+
+        const result = await query.getRawOne();
 
         return {
-            totalTransactions: parseInt(result.totalTransactions),
-            confirmedTransactions: parseInt(result.confirmedTransactions),
-            totalAud: parseFloat(result.totalAud),
+            totalTransactions: parseInt(result.totalTransactions, 10) || 0,
+            confirmedTransactions: parseInt(result.confirmedTransactions, 10) || 0,
+            totalAud: parseFloat(result.totalAud) || 0,
         };
     }
 
-    private async getRecentPayments(merchantId: string, limit: number) {
+    private async getRecentPayments(organizationId: string, limit: number, locationId?: string) {
+        const where: any = { organizationId };
+        if (locationId) where.locationId = locationId;
+
         return this.paymentsRepo.find({
-            where: { merchantId },
+            where,
             order: { createdAt: 'DESC' },
             take: limit,
             select: [
                 'id', 'audAmount', 'cryptoAmount', 'cryptoType',
-                'status', 'createdAt', 'orderReference',
+                'status', 'createdAt', 'orderReference', 'locationId', 'deviceId',
             ],
         });
     }
 
-    private async getCryptoBreakdown(merchantId: string) {
-        return this.paymentsRepo
+    private async getCryptoBreakdown(organizationId: string, locationId?: string) {
+        const query = this.paymentsRepo
             .createQueryBuilder('payment')
             .select('payment.crypto_type', 'cryptoType')
             .addSelect('COUNT(*)', 'count')
@@ -115,11 +129,16 @@ export class AnalyticsService {
                 'COALESCE(SUM(payment.aud_amount), 0)',
                 'totalAud',
             )
-            .where('payment.merchant_id = :merchantId', { merchantId })
+            .where('payment.organization_id = :organizationId', { organizationId })
             .andWhere('payment.status = :confirmed', {
                 confirmed: PaymentStatus.CONFIRMED,
             })
-            .groupBy('payment.crypto_type')
-            .getRawMany();
+            .groupBy('payment.crypto_type');
+
+        if (locationId) {
+            query.andWhere('payment.location_id = :locationId', { locationId });
+        }
+
+        return query.getRawMany();
     }
 }

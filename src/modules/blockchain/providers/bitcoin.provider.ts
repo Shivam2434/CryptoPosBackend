@@ -11,15 +11,22 @@ import {
 export class BitcoinProvider extends BaseBlockchainProvider {
     private readonly logger = new Logger(BitcoinProvider.name);
     private readonly apiUrl: string;
+    private readonly testnetApiUrl: string;
 
     constructor(private configService: ConfigService) {
         super();
-        this.apiUrl = configService.get<string>('blockchain.bitcoin.apiUrl');
+        this.apiUrl = configService.get<string>('blockchain.bitcoin.apiUrl') || 'https://blockstream.info/api';
+        this.testnetApiUrl = configService.get<string>('blockchain.bitcoin.testnetApiUrl') || 'https://blockstream.info/testnet/api';
     }
 
-    async getBalance(address: string): Promise<number> {
+    private getEndpoint(network?: string): string {
+        return network === 'testnet' ? this.testnetApiUrl : this.apiUrl;
+    }
+
+    async getBalance(address: string, network?: string): Promise<number> {
+        const endpoint = this.getEndpoint(network);
         const response = await axios.get(
-            `${this.apiUrl}/address/${address}`,
+            `${endpoint}/address/${address}`,
         );
         const stats = response.data.chain_stats;
         const satoshis =
@@ -29,30 +36,31 @@ export class BitcoinProvider extends BaseBlockchainProvider {
 
     async getTransaction(
         txHash: string,
+        network?: string,
     ): Promise<BlockchainTransaction | null> {
+        const endpoint = this.getEndpoint(network);
         try {
             const response = await axios.get(
-                `${this.apiUrl}/tx/${txHash}`,
+                `${endpoint}/tx/${txHash}`,
             );
             const tx = response.data;
-            const currentHeight = await this.getCurrentBlockNumber();
+            const currentHeight = await this.getCurrentBlockNumber(network);
 
             const totalOutput = tx.vout.reduce(
-                (sum: number, output: any) => sum + output.value,
+                (sum: number, output: any) => sum + (output.value || 0),
                 0,
             );
 
             return {
                 hash: tx.txid,
                 from: tx.vin[0]?.prevout?.scriptpubkey_address || 'unknown',
-                to:
-                    tx.vout[0]?.scriptpubkey_address || 'unknown',
+                to: tx.vout[0]?.scriptpubkey_address || 'unknown',
                 amount: totalOutput / 1e8,
-                confirmations: tx.status.confirmed
+                confirmations: tx.status?.confirmed
                     ? currentHeight - tx.status.block_height + 1
                     : 0,
-                blockNumber: tx.status.block_height,
-                timestamp: tx.status.block_time,
+                blockNumber: tx.status?.block_height,
+                timestamp: tx.status?.block_time,
             };
         } catch (error) {
             this.logger.error(
@@ -64,33 +72,31 @@ export class BitcoinProvider extends BaseBlockchainProvider {
 
     async getTransactionsForAddress(
         address: string,
+        sinceTimestamp?: number,
+        network?: string,
     ): Promise<BlockchainTransaction[]> {
+        const endpoint = this.getEndpoint(network);
         try {
             const response = await axios.get(
-                `${this.apiUrl}/address/${address}/txs`,
+                `${endpoint}/address/${address}/txs`,
             );
-            const currentHeight = await this.getCurrentBlockNumber();
+            const currentHeight = await this.getCurrentBlockNumber(network);
 
             return response.data.map((tx: any) => {
-                // Find the output that matches our address
-                const relevantOutput = tx.vout.find(
+                const relevantOutput = tx.vout?.find(
                     (out: any) => out.scriptpubkey_address === address,
                 );
 
                 return {
                     hash: tx.txid,
-                    from:
-                        tx.vin[0]?.prevout?.scriptpubkey_address ||
-                        'unknown',
+                    from: tx.vin?.[0]?.prevout?.scriptpubkey_address || 'unknown',
                     to: address,
-                    amount: relevantOutput
-                        ? relevantOutput.value / 1e8
-                        : 0,
-                    confirmations: tx.status.confirmed
+                    amount: relevantOutput ? relevantOutput.value / 1e8 : 0,
+                    confirmations: tx.status?.confirmed
                         ? currentHeight - tx.status.block_height + 1
                         : 0,
-                    blockNumber: tx.status.block_height,
-                    timestamp: tx.status.block_time,
+                    blockNumber: tx.status?.block_height,
+                    timestamp: tx.status?.block_time,
                 };
             });
         } catch (error) {
@@ -101,15 +107,16 @@ export class BitcoinProvider extends BaseBlockchainProvider {
         }
     }
 
-    async getCurrentBlockNumber(): Promise<number> {
+    async getCurrentBlockNumber(network?: string): Promise<number> {
+        const endpoint = this.getEndpoint(network);
         const response = await axios.get(
-            `${this.apiUrl}/blocks/tip/height`,
+            `${endpoint}/blocks/tip/height`,
         );
-        return response.data;
+        return Number(response.data) || 0;
     }
 
-    async getConfirmations(txHash: string): Promise<number> {
-        const tx = await this.getTransaction(txHash);
+    async getConfirmations(txHash: string, network?: string): Promise<number> {
+        const tx = await this.getTransaction(txHash, network);
         return tx?.confirmations || 0;
     }
 }

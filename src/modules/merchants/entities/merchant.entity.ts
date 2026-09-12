@@ -1,9 +1,17 @@
 // src/modules/merchants/entities/merchant.entity.ts
 import {
-    Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-    UpdateDateColumn, OneToMany, Index,
+    Entity,
+    PrimaryGeneratedColumn,
+    Column,
+    CreateDateColumn,
+    UpdateDateColumn,
+    OneToMany,
+    ManyToOne,
+    JoinColumn,
+    Index,
 } from 'typeorm';
 import { Payment } from '../../payments/entities/payment.entity';
+import { Organization } from '../../organizations/entities/organization.entity';
 
 export enum MerchantStatus {
     PENDING = 'pending',
@@ -16,58 +24,66 @@ export class Merchant {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
+    @Column({ name: 'organization_id', nullable: true })
+    @Index()
+    organizationId?: string;
+
+    @ManyToOne(() => Organization, { nullable: true, onDelete: 'SET NULL' })
+    @JoinColumn({ name: 'organization_id' })
+    organization?: Organization;
+
     @Column({ unique: true })
     @Index()
     email: string;
 
-    @Column()
-    password: string;
+    @Column({ select: true })
+    password?: string;
 
     @Column({ name: 'business_name' })
     businessName: string;
 
     @Column({ name: 'business_abn', nullable: true })
-    businessAbn: string; // Australian Business Number
+    businessAbn?: string; // Australian Business Number (11 digits)
 
     @Column({ name: 'contact_name' })
     contactName: string;
 
     @Column({ name: 'contact_phone', nullable: true })
-    contactPhone: string;
+    contactPhone?: string;
 
     @Column({ nullable: true })
-    address: string;
+    address?: string;
 
     @Column({ nullable: true })
-    city: string;
+    city?: string;
 
     @Column({ nullable: true })
-    state: string;
+    state?: string;
 
     @Column({ nullable: true })
-    postcode: string;
+    postcode?: string;
 
     @Column({
         type: 'enum',
         enum: MerchantStatus,
-        default: MerchantStatus.PENDING,
+        default: MerchantStatus.ACTIVE,
     })
     status: MerchantStatus;
 
-    // Crypto wallet addresses for receiving payments
+    // Crypto wallet addresses for receiving payments (Merchant static fallback)
     @Column({ name: 'eth_wallet_address', nullable: true })
-    ethWalletAddress: string;
+    ethWalletAddress?: string;
 
     @Column({ name: 'btc_wallet_address', nullable: true })
-    btcWalletAddress: string;
+    btcWalletAddress?: string;
 
     @Column({ name: 'usdt_wallet_address', nullable: true })
-    usdtWalletAddress: string;
+    usdtWalletAddress?: string;
 
     // Accepted cryptocurrencies
     @Column('simple-array', {
         name: 'accepted_cryptos',
-        default: 'ETH,BTC,USDT',
+        default: 'ETH,BTC,USDT,USDC',
     })
     acceptedCryptos: string[];
 
@@ -79,18 +95,18 @@ export class Merchant {
     settlementPreference: string;
 
     @Column({ name: 'bank_bsb', nullable: true })
-    bankBsb: string;
+    bankBsb?: string;
 
     @Column({ name: 'bank_account_number', nullable: true })
-    bankAccountNumber: string;
+    bankAccountNumber?: string;
 
-    // API key for programmatic access
+    // Legacy API key for backward compatibility
     @Column({ name: 'api_key', unique: true, nullable: true })
     @Index()
-    apiKey: string;
+    apiKey?: string;
 
     @OneToMany(() => Payment, (payment) => payment.merchant)
-    payments: Payment[];
+    payments?: Payment[];
 
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;

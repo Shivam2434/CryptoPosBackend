@@ -1,8 +1,8 @@
 // src/modules/analytics/analytics.controller.ts
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentOrg } from '../../common/decorators/current-tenant.decorator';
 import { AnalyticsService } from './analytics.service';
 
 @ApiTags('Analytics')
@@ -13,8 +13,12 @@ export class AnalyticsController {
     constructor(private analyticsService: AnalyticsService) { }
 
     @Get('dashboard')
-    @ApiOperation({ summary: 'Get dashboard analytics' })
-    getDashboard(@CurrentUser('id') merchantId: string) {
-        return this.analyticsService.getDashboardStats(merchantId);
+    @ApiOperation({ summary: 'Get multi-tenant dashboard analytics' })
+    @ApiQuery({ name: 'locationId', required: false, description: 'Filter metrics by specific store location' })
+    getDashboard(
+        @CurrentOrg() orgId: string,
+        @Query('locationId') locationId?: string,
+    ) {
+        return this.analyticsService.getDashboardStats(orgId, locationId);
     }
 }
