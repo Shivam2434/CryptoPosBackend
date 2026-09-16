@@ -7,12 +7,9 @@ import { MerchantsController } from './merchants.controller';
 import { OrganizationsModule } from '../organizations/organizations.module';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([Merchant]),
-        OrganizationsModule,
-    ],
-    controllers: [MerchantsController],
-    providers: [MerchantsService],
-    exports: [MerchantsService],
+  imports: [TypeOrmModule.forFeature([Merchant]), OrganizationsModule],
+  controllers: [MerchantsController],
+  providers: [MerchantsService],
+  exports: [MerchantsService],
 })
-export class MerchantsModule { }
+export class MerchantsModule {}

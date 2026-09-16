@@ -7,11 +7,14 @@ import { SimulatePaymentTxDto } from './dto/simulate-payment.dto';
 @ApiTags('Sandbox & Testing')
 @Controller('sandbox')
 export class SandboxController {
-    constructor(private sandboxService: SandboxService) { }
+  constructor(private sandboxService: SandboxService) {}
 
-    @Post('simulate-payment-tx')
-    @ApiOperation({ summary: 'Simulate blockchain transaction detection/confirmation for test payments' })
-    simulatePaymentTx(@Body() dto: SimulatePaymentTxDto) {
-        return this.sandboxService.simulatePaymentTx(dto);
-    }
+  @Post('simulate-payment-tx')
+  @ApiOperation({
+    summary:
+      'Simulate blockchain transaction detection/confirmation for test payments',
+  })
+  simulatePaymentTx(@Body() dto: SimulatePaymentTxDto) {
+    return this.sandboxService.simulatePaymentTx(dto);
+  }
 }

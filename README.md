@@ -1,204 +1,119 @@
-cat > README.md << 'EOF'
 # CryptoPOS Backend 🚀
 
-NestJS REST API + WebSocket server powering the CryptoPOS platform. Handles merchants, payments, blockchain monitoring, and settlements.
+Enterprise-grade NestJS REST API + WebSocket server powering the CryptoPOS multi-tenant payments platform. Designed for Australian merchants, point-of-sale terminals, and e-commerce integrations.
+
+---
 
 ## 🎯 Features
 
-- 🔐 JWT authentication for merchants
-- 💳 Payment creation & lifecycle management
-- ⛓️ Blockchain transaction monitoring (BTC, ETH, ERC-20)
-- 💱 Live crypto price feeds (CoinGecko)
-- 🔴 Real-time payment updates via Socket.io
-- 📊 Analytics endpoints
-- 🇦🇺 AUD settlement support
-- 🛡️ AUSTRAC-compliant audit trail
+- 🔐 **Third-Party IdP Auth**: Vendor-agnostic OIDC/JWKS authentication (Auth0, AWS Cognito, Clerk, Supabase, Mock).
+- 💳 **External Wallet First MVP**: Self-custody receiving address validation (BTC, ETH, USDT, USDC) directly paying merchant wallets with zero platform custody or private key handling.
+- 🏢 **Multi-Tenant Hierarchy**: Organization (Tenant) ➔ Users & RBAC (`owner`, `admin`, `manager`, `cashier`) ➔ Merchants ➔ Locations ➔ Devices.
+- ⛓️ **Blockchain Monitoring**: Distributed, restart-safe transaction detection & confirmation tracking for Bitcoin and Ethereum (Native & ERC-20).
+- 💱 **Live AUD Pricing**: CoinGecko exchange rate polling with 30-second proactive cache and slippage buffer.
+- 🔴 **Real-Time WebSockets**: Socket.io channels for instant POS terminal screen updates (`payment_<id>`) and live store feeds (`org_<id>`).
+- 🔑 **Developer API Keys & Webhooks**: Scoped hashed API keys (`pk_live_`, `sk_live_`) and HMAC-signed webhook delivery with exponential backoff.
+- 🛡️ **AUSTRAC Audit Trail**: Comprehensive audit logging for security, compliance, and wallet address changes.
+- 🧪 **Sandbox Simulation**: Built-in test harness for simulating blockchain payments in development and QA.
+
+---
 
 ## 🏗️ Tech Stack
 
-- **Framework**: NestJS 10
-- **Database**: PostgreSQL 16 + TypeORM
-- **Auth**: JWT + Passport
-- **WebSocket**: Socket.io
-- **Blockchain**: ethers.js, Blockstream API
-- **Validation**: class-validator + class-transformer
-- **Documentation**: Swagger/OpenAPI
-- **Language**: TypeScript
+- **Framework**: NestJS 11
+- **Language**: TypeScript 5.7 (Strict Mode)
+- **Database**: PostgreSQL 16 + TypeORM 0.3
+- **Authentication**: OIDC / JWKS (Native Node.js `crypto`) + RBAC
+- **Blockchain**: `ethers.js` v6, `bitcoinjs-lib` v7, Blockstream REST API
+- **WebSockets**: Socket.io
+- **Documentation**: Swagger / OpenAPI 2.0 (`/api/docs`)
+
+---
 
 ## 📁 Project Structure
 
-\`\`\`
+```
 backend/
 ├── src/
-│   ├── main.ts                       # App bootstrap
-│   ├── app.module.ts                 # Root module
-│   ├── config/                       # Configuration
-│   ├── common/                       # Filters, guards, decorators
+│   ├── main.ts                       # App bootstrap & Swagger initialization
+│   ├── app.module.ts                 # Root application module
+│   ├── config/                       # App, auth, blockchain, pricing configs
+│   ├── common/                       # Guards, filters, decorators, interceptors
+│   ├── migrations/                   # PostgreSQL TypeORM migrations
 │   └── modules/
-│       ├── auth/                     # Authentication
-│       ├── merchants/                # Merchant management
-│       ├── payments/                 # Payment lifecycle
-│       ├── blockchain/               # BTC/ETH monitoring
-│       ├── pricing/                  # Exchange rates
-│       ├── settlements/              # AUD conversion
-│       └── analytics/                # Dashboard data
-├── test/                             # E2E tests
-├── docker-compose.yml                # Local dev DB
+│       ├── auth/                     # IdP token verification & profile sync
+│       ├── users/                    # Team management & RBAC roles
+│       ├── wallets/                  # External receiving addresses & validation
+│       ├── organizations/            # Tenant onboarding & settings
+│       ├── merchants/                # Business profiles, ABN, banking
+│       ├── locations/                # Store locations & sales channels
+│       ├── devices/                  # POS register pairing & tokens
+│       ├── api-keys/                 # Live/Test scoped developer keys
+│       ├── payments/                 # Idempotent payments, QR, addresses
+│       ├── blockchain/               # Stateless blockchain monitor
+│       ├── pricing/                  # Live exchange rate cache
+│       ├── webhooks/                 # Signed webhook dispatcher & retries
+│       ├── settlements/              # AUD batch payout abstraction
+│       ├── sandbox/                  # Test payment simulator
+│       └── analytics/                # Multi-tenant dashboard metrics
+├── test/                             # Unit & E2E tests
 └── nest-cli.json
-\`\`\`
+```
+
+---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - Node.js 20+ LTS
 - PostgreSQL 16+
-- Docker (optional, for local DB)
 
 ### Installation
 
-\`\`\`bash
-# Clone the repo
+```bash
+# Clone the repository
 git clone https://github.com/YOUR_USERNAME/crypto-pos-backend.git
 cd crypto-pos-backend
 
 # Install dependencies
 npm install
 
-# Create .env file
+# Configure environment variables
 cp .env.example .env
-
-# Edit .env with your database credentials and API keys
-\`\`\`
-
-### Database Setup
-
-**Option 1: Docker (recommended for dev)**
-\`\`\`bash
-docker-compose up -d postgres
-\`\`\`
-
-**Option 2: Local PostgreSQL**
-\`\`\`bash
-createdb crypto_pos
-\`\`\`
-
-### Environment Variables
-
-See \`.env.example\` for full list. Required:
-
-\`\`\`env
-NODE_ENV=development
-PORT=3000
-
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=postgres
-DB_PASSWORD=your_password
-DB_NAME=crypto_pos
-
-# JWT (generate a strong secret!)
-JWT_SECRET=your-super-secret-jwt-key-min-32-chars
-JWT_EXPIRES_IN=24h
-
-# Blockchain APIs
-ETH_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
-ETH_API_KEY=YOUR_ETHERSCAN_KEY
-BTC_API_URL=https://blockstream.info/api
-
-# CORS
-ALLOWED_ORIGINS=http://localhost:8081,http://localhost:3001
-\`\`\`
+```
 
 ### Running the Server
 
-\`\`\`bash
+```bash
 # Development (with hot reload)
 npm run start:dev
 
-# Debug mode
-npm run start:debug
-
-# Production
-npm run start:prod
-\`\`\`
-
-Server runs at:
-- **API**: http://localhost:3000/api/v1
-- **Swagger docs**: http://localhost:3000/api/docs
-- **WebSocket**: ws://localhost:3000/payments
-
-## 📖 API Documentation
-
-Once running, visit **http://localhost:3000/api/docs** for interactive Swagger UI.
-
-### Key Endpoints
-
-\`\`\`
-POST   /api/v1/auth/register              # Register merchant
-POST   /api/v1/auth/login                 # Login
-
-GET    /api/v1/merchants/profile          # Get profile
-PUT    /api/v1/merchants/profile          # Update profile
-
-POST   /api/v1/payments                   # Create payment
-GET    /api/v1/payments                   # List payments (paginated)
-GET    /api/v1/payments/:id               # Get single payment
-GET    /api/v1/payments/:id/status        # Payment status only
-
-GET    /api/v1/analytics/dashboard        # Dashboard stats
-\`\`\`
-
-## 🧪 Testing
-
-\`\`\`bash
-# Unit tests
+# Run unit tests
 npm run test
 
-# E2E tests
-npm run test:e2e
+# Production build
+npm run build
+npm run start:prod
+```
 
-# Coverage
-npm run test:cov
-\`\`\`
+Server endpoints:
+- **API Base**: `http://localhost:3000/api/v1`
+- **Swagger Docs**: `http://localhost:3000/api/docs`
+- **WebSocket Gateway**: `ws://localhost:3000/payments`
 
-## 🐳 Docker
+---
 
-\`\`\`bash
-# Build image
-docker build -t crypto-pos-backend .
+## 🔒 Security & Custody Boundary
 
-# Run with docker-compose
-docker-compose up -d
-\`\`\`
+CryptoPOS operates strictly as a payment gateway and orchestration layer for the MVP:
+- **CryptoPOS Stores**: Public receiving address, target network, asset type, friendly label.
+- **CryptoPOS NEVER Stores**: Private keys, seed phrases, or wallet credentials.
+- **Merchant Controls**: Private keys, seed phrases, and direct self-custody receipt of all customer funds.
 
-## 🚀 Deployment
+---
 
-### AWS ECS Fargate
+## 💬 Contact & Support
 
-See \`docs/deployment.md\` for AWS deployment guide.
-
-### Environment Setup Checklist
-
-- [ ] PostgreSQL RDS instance
-- [ ] JWT secret in AWS Secrets Manager
-- [ ] Alchemy/Infura API keys for Ethereum
-- [ ] SSL certificate (ACM)
-- [ ] Application Load Balancer
-- [ ] CloudWatch logging
-
-## 🔗 Related Repositories
-
-- **Mobile App**: [crypto-pos-mobile](https://github.com/YOUR_USERNAME/crypto-pos-mobile)
-- **Web Dashboard**: [crypto-pos-web](https://github.com/YOUR_USERNAME/crypto-pos-web) (coming soon)
-
-## 📝 License
-
-Private — All rights reserved
-
-## 👤 Author
-
-Shivam Sharma
-EOF
-
-echo "✅ Backend README created"
+- **Email**: `hey@sharmashivam.com`
+- **Location**: Melbourne, Australia
+- **Documentation**: [CryptoPOS Handover Guide](file:///Users/shivamsharma/Downloads/Projects/crypto_pos/backend/PROJECT_STATE.md)

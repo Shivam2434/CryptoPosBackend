@@ -11,7 +11,9 @@ import { OrganizationsModule } from '../organizations/organizations.module';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
 import { DevicesModule } from '../devices/devices.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
+import { WalletsModule } from '../wallets/wallets.module';
 import { PaymentAddressService } from './address/payment-address.service';
+import { ExternalWalletAddressProvider } from './address/external-wallet-address.provider';
 import { MerchantStaticAddressProvider } from './address/merchant-static-address.provider';
 import { PoolAddressProvider } from './address/pool-address.provider';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -20,27 +22,37 @@ import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { CompositeAuthGuard } from '../../common/guards/composite-auth.guard';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([Payment]),
-        PricingModule,
-        MerchantsModule,
-        OrganizationsModule,
-        ApiKeysModule,
-        DevicesModule,
-        WebhooksModule,
-    ],
-    controllers: [PaymentsController],
-    providers: [
-        PaymentsService,
-        PaymentsGateway,
-        PaymentAddressService,
-        MerchantStaticAddressProvider,
-        PoolAddressProvider,
-        JwtAuthGuard,
-        ApiKeyAuthGuard,
-        DeviceAuthGuard,
-        CompositeAuthGuard,
-    ],
-    exports: [PaymentsService, PaymentsGateway, PaymentAddressService, CompositeAuthGuard, JwtAuthGuard, ApiKeyAuthGuard, DeviceAuthGuard],
+  imports: [
+    TypeOrmModule.forFeature([Payment]),
+    PricingModule,
+    MerchantsModule,
+    OrganizationsModule,
+    ApiKeysModule,
+    DevicesModule,
+    WebhooksModule,
+    WalletsModule,
+  ],
+  controllers: [PaymentsController],
+  providers: [
+    PaymentsService,
+    PaymentsGateway,
+    PaymentAddressService,
+    ExternalWalletAddressProvider,
+    MerchantStaticAddressProvider,
+    PoolAddressProvider,
+    JwtAuthGuard,
+    ApiKeyAuthGuard,
+    DeviceAuthGuard,
+    CompositeAuthGuard,
+  ],
+  exports: [
+    PaymentsService,
+    PaymentsGateway,
+    PaymentAddressService,
+    CompositeAuthGuard,
+    JwtAuthGuard,
+    ApiKeyAuthGuard,
+    DeviceAuthGuard,
+  ],
 })
-export class PaymentsModule { }
+export class PaymentsModule {}

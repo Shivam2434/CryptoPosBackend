@@ -11,17 +11,13 @@ import { ManualBankPayoutProvider } from './providers/manual-bank-payout.provide
 import { MockPayoutProvider } from './providers/mock-payout.provider';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([Settlement, Payment]),
-        MerchantsModule,
-        WebhooksModule,
-    ],
-    controllers: [SettlementsController],
-    providers: [
-        SettlementsService,
-        ManualBankPayoutProvider,
-        MockPayoutProvider,
-    ],
-    exports: [SettlementsService],
+  imports: [
+    TypeOrmModule.forFeature([Settlement, Payment]),
+    MerchantsModule,
+    WebhooksModule,
+  ],
+  controllers: [SettlementsController],
+  providers: [SettlementsService, ManualBankPayoutProvider, MockPayoutProvider],
+  exports: [SettlementsService],
 })
-export class SettlementsModule { }
+export class SettlementsModule {}

@@ -1,83 +1,111 @@
 // src/modules/users/entities/user.entity.ts
 import {
-    Entity,
-    PrimaryGeneratedColumn,
-    Column,
-    CreateDateColumn,
-    UpdateDateColumn,
-    ManyToOne,
-    JoinColumn,
-    Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Index,
 } from 'typeorm';
 import { Organization } from '../../organizations/entities/organization.entity';
-import { UserRole } from '../../../common/interfaces/auth-context.interface';
+import {
+  UserRole,
+  AdminScopeLevel,
+} from '../../../common/interfaces/auth-context.interface';
 
 export enum UserStatus {
-    ACTIVE = 'active',
-    SUSPENDED = 'suspended',
-    PENDING = 'pending',
+  ACTIVE = 'active',
+  SUSPENDED = 'suspended',
+  PENDING = 'pending',
 }
 
 @Entity('users')
 @Index(['authProvider', 'authProviderUserId'], { unique: true })
 @Index(['organizationId', 'email'])
 export class User {
-    @PrimaryGeneratedColumn('uuid')
-    id: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-    // The Identity Provider identifier e.g. 'oidc', 'auth0', 'cognito', 'clerk', 'supabase', 'legacy'
-    @Column({ name: 'auth_provider', default: 'oidc' })
-    authProvider: string;
+  // The Identity Provider identifier e.g. 'oidc', 'auth0', 'cognito', 'clerk', 'supabase', 'legacy'
+  @Column({ name: 'auth_provider', default: 'oidc' })
+  authProvider: string;
 
-    // The subject identifier in the IdP token e.g. 'auth0|64fa...', 'usr_clerk_123', or sub
-    @Column({ name: 'auth_provider_user_id' })
-    authProviderUserId: string;
+  // The subject identifier in the IdP token e.g. 'auth0|64fa...', 'usr_clerk_123', or sub
+  @Column({ name: 'auth_provider_user_id' })
+  authProviderUserId: string;
 
-    @Column()
-    @Index()
-    email: string;
+  @Column()
+  @Index()
+  email: string;
 
-    @Column({ nullable: true })
-    name?: string;
+  @Column({ nullable: true })
+  name?: string;
 
-    @Column({ name: 'organization_id' })
-    @Index()
-    organizationId: string;
+  @Column({ name: 'organization_id', nullable: true })
+  @Index()
+  organizationId?: string;
 
-    @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'organization_id' })
-    organization?: Organization;
+  @ManyToOne(() => Organization, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'organization_id' })
+  organization?: Organization;
 
-    @Column({ name: 'merchant_id', nullable: true })
-    @Index()
-    merchantId?: string;
+  @Column({ name: 'merchant_id', nullable: true })
+  @Index()
+  merchantId?: string;
 
-    @Column({
-        type: 'enum',
-        enum: UserRole,
-        default: UserRole.ADMIN,
-    })
-    role: UserRole;
+  @Column({
+    type: 'enum',
+    enum: UserRole,
+    default: UserRole.ADMIN,
+  })
+  role: UserRole;
 
-    @Column('simple-array', { default: '*' })
-    permissions: string[];
+  @Column('simple-array', { default: '*' })
+  permissions: string[];
 
-    @Column({
-        type: 'enum',
-        enum: UserStatus,
-        default: UserStatus.ACTIVE,
-    })
-    status: UserStatus;
+  // Scoped authority level (PLATFORM, ORGANIZATION, MERCHANT, LOCATION, DEVICE)
+  @Column({
+    name: 'scope_level',
+    type: 'enum',
+    enum: AdminScopeLevel,
+    default: AdminScopeLevel.ORGANIZATION,
+  })
+  scopeLevel: AdminScopeLevel;
 
-    @Column({ type: 'jsonb', nullable: true, default: {} })
-    metadata: Record<string, any>;
+  @Column('simple-array', { name: 'scoped_organization_ids', default: '' })
+  scopedOrganizationIds: string[];
 
-    @Column({ name: 'last_login_at', nullable: true })
-    lastLoginAt?: Date;
+  @Column('simple-array', { name: 'scoped_merchant_ids', default: '' })
+  scopedMerchantIds: string[];
 
-    @CreateDateColumn({ name: 'created_at' })
-    createdAt: Date;
+  @Column({ name: 'is_platform_admin', default: false })
+  @Index()
+  isPlatformAdmin: boolean;
 
-    @UpdateDateColumn({ name: 'updated_at' })
-    updatedAt: Date;
+  @Column({ name: 'invited_by_user_id', nullable: true })
+  invitedByUserId?: string;
+
+  @Column({ name: 'invitation_id', nullable: true })
+  invitationId?: string;
+
+  @Column({
+    type: 'enum',
+    enum: UserStatus,
+    default: UserStatus.ACTIVE,
+  })
+  status: UserStatus;
+
+  @Column({ type: 'jsonb', nullable: true, default: {} })
+  metadata: Record<string, any>;
+
+  @Column({ name: 'last_login_at', nullable: true })
+  lastLoginAt?: Date;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
 }

@@ -2,11 +2,11 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddUsersAndIdPAuth1725910000000 implements MigrationInterface {
-    name = 'AddUsersAndIdPAuth1725910000000';
+  name = 'AddUsersAndIdPAuth1725910000000';
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        // 1. Create user enums if not existing
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // 1. Create user enums if not existing
+    await queryRunner.query(`
             DO $$ BEGIN
                 CREATE TYPE "user_role_enum" AS ENUM ('owner', 'admin', 'manager', 'cashier');
             EXCEPTION
@@ -14,7 +14,7 @@ export class AddUsersAndIdPAuth1725910000000 implements MigrationInterface {
             END $$;
         `);
 
-        await queryRunner.query(`
+    await queryRunner.query(`
             DO $$ BEGIN
                 CREATE TYPE "user_status_enum" AS ENUM ('active', 'suspended', 'pending');
             EXCEPTION
@@ -22,8 +22,8 @@ export class AddUsersAndIdPAuth1725910000000 implements MigrationInterface {
             END $$;
         `);
 
-        // 2. Create users table
-        await queryRunner.query(`
+    // 2. Create users table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "users" (
                 "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 "auth_provider" character varying NOT NULL DEFAULT 'oidc',
@@ -43,25 +43,25 @@ export class AddUsersAndIdPAuth1725910000000 implements MigrationInterface {
             );
         `);
 
-        // 3. Create indices
-        await queryRunner.query(`
+    // 3. Create indices
+    await queryRunner.query(`
             CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_provider_uid" ON "users" ("auth_provider", "auth_provider_user_id");
         `);
-        await queryRunner.query(`
+    await queryRunner.query(`
             CREATE INDEX IF NOT EXISTS "idx_users_org_email" ON "users" ("organization_id", "email");
         `);
-        await queryRunner.query(`
+    await queryRunner.query(`
             CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");
         `);
-        await queryRunner.query(`
+    await queryRunner.query(`
             CREATE INDEX IF NOT EXISTS "idx_users_organization_id" ON "users" ("organization_id");
         `);
-        await queryRunner.query(`
+    await queryRunner.query(`
             CREATE INDEX IF NOT EXISTS "idx_users_merchant_id" ON "users" ("merchant_id");
         `);
 
-        // 4. Backfill existing merchants as initial organization owner users
-        await queryRunner.query(`
+    // 4. Backfill existing merchants as initial organization owner users
+    await queryRunner.query(`
             INSERT INTO "users" ("auth_provider", "auth_provider_user_id", "email", "name", "organization_id", "merchant_id", "role", "permissions", "status")
             SELECT 
                 'legacy' AS "auth_provider",
@@ -77,11 +77,11 @@ export class AddUsersAndIdPAuth1725910000000 implements MigrationInterface {
             WHERE m."organization_id" IS NOT NULL
             ON CONFLICT ("auth_provider", "auth_provider_user_id") DO NOTHING;
         `);
-    }
+  }
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`DROP TABLE IF EXISTS "users";`);
-        await queryRunner.query(`DROP TYPE IF EXISTS "user_status_enum";`);
-        await queryRunner.query(`DROP TYPE IF EXISTS "user_role_enum";`);
-    }
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS "users";`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "user_status_enum";`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "user_role_enum";`);
+  }
 }

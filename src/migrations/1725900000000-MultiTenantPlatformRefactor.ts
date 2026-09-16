@@ -2,11 +2,11 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterface {
-    name = 'MultiTenantPlatformRefactor1725900000000';
+  name = 'MultiTenantPlatformRefactor1725900000000';
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        // 1. Create organizations table
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // 1. Create organizations table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "organizations" (
                 "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 "name" character varying NOT NULL,
@@ -22,8 +22,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             );
         `);
 
-        // 2. Create locations table
-        await queryRunner.query(`
+    // 2. Create locations table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "locations" (
                 "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 "organization_id" uuid NOT NULL,
@@ -43,8 +43,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             );
         `);
 
-        // 3. Create devices table
-        await queryRunner.query(`
+    // 3. Create devices table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "devices" (
                 "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 "organization_id" uuid NOT NULL,
@@ -62,8 +62,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             );
         `);
 
-        // 4. Create api_keys table
-        await queryRunner.query(`
+    // 4. Create api_keys table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "api_keys" (
                 "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 "organization_id" uuid NOT NULL,
@@ -82,8 +82,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             );
         `);
 
-        // 5. Create webhook_endpoints table
-        await queryRunner.query(`
+    // 5. Create webhook_endpoints table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "webhook_endpoints" (
                 "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 "organization_id" uuid NOT NULL,
@@ -98,8 +98,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             );
         `);
 
-        // 6. Create webhook_deliveries table
-        await queryRunner.query(`
+    // 6. Create webhook_deliveries table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "webhook_deliveries" (
                 "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 "organization_id" uuid NOT NULL,
@@ -121,8 +121,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             );
         `);
 
-        // 7. Create audit_logs table
-        await queryRunner.query(`
+    // 7. Create audit_logs table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "audit_logs" (
                 "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
                 "organization_id" uuid NOT NULL,
@@ -138,14 +138,14 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             );
         `);
 
-        // 8. Alter merchants table
-        await queryRunner.query(`
+    // 8. Alter merchants table
+    await queryRunner.query(`
             ALTER TABLE "merchants" 
             ADD COLUMN IF NOT EXISTS "organization_id" uuid;
         `);
 
-        // 9. Alter payments table
-        await queryRunner.query(`
+    // 9. Alter payments table
+    await queryRunner.query(`
             ALTER TABLE "payments" 
             ADD COLUMN IF NOT EXISTS "organization_id" uuid,
             ADD COLUMN IF NOT EXISTS "location_id" uuid,
@@ -159,8 +159,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             ADD COLUMN IF NOT EXISTS "settlement_id" uuid;
         `);
 
-        // 10. Alter settlements table
-        await queryRunner.query(`
+    // 10. Alter settlements table
+    await queryRunner.query(`
             ALTER TABLE "settlements" 
             ADD COLUMN IF NOT EXISTS "organization_id" uuid,
             ADD COLUMN IF NOT EXISTS "location_id" uuid,
@@ -172,8 +172,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMP DEFAULT now();
         `);
 
-        // 11. Create Compound Indexes
-        await queryRunner.query(`
+    // 11. Create Compound Indexes
+    await queryRunner.query(`
             CREATE INDEX IF NOT EXISTS "idx_payments_org_created" ON "payments" ("organization_id", "created_at");
             CREATE INDEX IF NOT EXISTS "idx_payments_org_status" ON "payments" ("organization_id", "status");
             CREATE INDEX IF NOT EXISTS "idx_payments_org_location" ON "payments" ("organization_id", "location_id");
@@ -182,8 +182,8 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
             CREATE INDEX IF NOT EXISTS "idx_deliveries_org_created" ON "webhook_deliveries" ("organization_id", "created_at");
         `);
 
-        // 12. Auto-migrate existing merchants into default organizations if any exist
-        await queryRunner.query(`
+    // 12. Auto-migrate existing merchants into default organizations if any exist
+    await queryRunner.query(`
             DO $$
             DECLARE
                 m RECORD;
@@ -203,15 +203,19 @@ export class MultiTenantPlatformRefactor1725900000000 implements MigrationInterf
                 END LOOP;
             END $$;
         `);
-    }
+  }
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`DROP TABLE IF EXISTS "webhook_deliveries" CASCADE;`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "webhook_endpoints" CASCADE;`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "audit_logs" CASCADE;`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "api_keys" CASCADE;`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "devices" CASCADE;`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "locations" CASCADE;`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "organizations" CASCADE;`);
-    }
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `DROP TABLE IF EXISTS "webhook_deliveries" CASCADE;`,
+    );
+    await queryRunner.query(
+      `DROP TABLE IF EXISTS "webhook_endpoints" CASCADE;`,
+    );
+    await queryRunner.query(`DROP TABLE IF EXISTS "audit_logs" CASCADE;`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "api_keys" CASCADE;`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "devices" CASCADE;`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "locations" CASCADE;`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "organizations" CASCADE;`);
+  }
 }

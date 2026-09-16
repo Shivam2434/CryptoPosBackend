@@ -5,9 +5,9 @@ import { SandboxController } from './sandbox.controller';
 import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
-    imports: [PaymentsModule],
-    controllers: [SandboxController],
-    providers: [SandboxService],
-    exports: [SandboxService],
+  imports: [PaymentsModule],
+  controllers: [SandboxController],
+  providers: [SandboxService],
+  exports: [SandboxService],
 })
-export class SandboxModule { }
+export class SandboxModule {}

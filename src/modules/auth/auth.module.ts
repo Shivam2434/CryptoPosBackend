@@ -15,38 +15,40 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
 @Module({
-    imports: [
-        MerchantsModule,
-        UsersModule,
-        PassportModule.register({ defaultStrategy: 'jwt' }),
-        JwtModule.registerAsync({
-            imports: [ConfigModule],
-            inject: [ConfigService],
-            useFactory: (config: ConfigService) => ({
-                secret: config.get<string>('app.jwtSecret') || 'crypto-pos-dev-secret-change-in-production-min-32-chars',
-                signOptions: {
-                    expiresIn: (config.get<string>('app.jwtExpiresIn') || '24h') as any,
-                },
-            }),
-        }),
-    ],
-    controllers: [AuthController],
-    providers: [
-        OidcIdentityProviderAdapter,
-        MockIdentityProviderAdapter,
-        IdentityProviderService,
-        AuthService,
-        JwtStrategy,
-        JwtAuthGuard,
-        RolesGuard,
-    ],
-    exports: [
-        AuthService,
-        IdentityProviderService,
-        JwtStrategy,
-        JwtAuthGuard,
-        RolesGuard,
-        UsersModule,
-    ],
+  imports: [
+    MerchantsModule,
+    UsersModule,
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret:
+          config.get<string>('app.jwtSecret') ||
+          'crypto-pos-dev-secret-change-in-production-min-32-chars',
+        signOptions: {
+          expiresIn: (config.get<string>('app.jwtExpiresIn') || '24h') as any,
+        },
+      }),
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [
+    OidcIdentityProviderAdapter,
+    MockIdentityProviderAdapter,
+    IdentityProviderService,
+    AuthService,
+    JwtStrategy,
+    JwtAuthGuard,
+    RolesGuard,
+  ],
+  exports: [
+    AuthService,
+    IdentityProviderService,
+    JwtStrategy,
+    JwtAuthGuard,
+    RolesGuard,
+    UsersModule,
+  ],
 })
-export class AuthModule { }
+export class AuthModule {}

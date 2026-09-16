@@ -8,11 +8,11 @@ import { BitcoinProvider } from './providers/bitcoin.provider';
 import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([Payment]),
-        forwardRef(() => PaymentsModule),
-    ],
-    providers: [BlockchainService, EthereumProvider, BitcoinProvider],
-    exports: [BlockchainService, EthereumProvider, BitcoinProvider],
+  imports: [
+    TypeOrmModule.forFeature([Payment]),
+    forwardRef(() => PaymentsModule),
+  ],
+  providers: [BlockchainService, EthereumProvider, BitcoinProvider],
+  exports: [BlockchainService, EthereumProvider, BitcoinProvider],
 })
-export class BlockchainModule { }
+export class BlockchainModule {}

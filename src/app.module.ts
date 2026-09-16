@@ -4,7 +4,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { appConfig, authConfig, blockchainConfig, pricingConfig } from './config/app.config';
+import {
+  appConfig,
+  authConfig,
+  blockchainConfig,
+  pricingConfig,
+} from './config/app.config';
 import { databaseConfig } from './config/database.config';
 import { QueueModule } from './modules/queue/queue.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -22,12 +27,20 @@ import { PricingModule } from './modules/pricing/pricing.module';
 import { SettlementsModule } from './modules/settlements/settlements.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SandboxModule } from './modules/sandbox/sandbox.module';
+import { WalletsModule } from './modules/wallets/wallets.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig, blockchainConfig, pricingConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        authConfig,
+        blockchainConfig,
+        pricingConfig,
+      ],
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -61,6 +74,8 @@ import { SandboxModule } from './modules/sandbox/sandbox.module';
     SettlementsModule,
     AnalyticsModule,
     SandboxModule,
+    WalletsModule,
+    AdminModule,
   ],
 })
-export class AppModule { }
+export class AppModule {}

@@ -13,7 +13,11 @@ async function bootstrap() {
   // Security
   app.use(helmet());
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3001', 'http://localhost:8081', 'http://localhost:19006'],
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
+      'http://localhost:3001',
+      'http://localhost:8081',
+      'http://localhost:19006',
+    ],
     credentials: true,
   });
 
@@ -34,7 +38,9 @@ async function bootstrap() {
   // Swagger OpenAPI Documentation
   const config = new DocumentBuilder()
     .setTitle('CryptoPOS Multi-Tenant Payments Platform API')
-    .setDescription('Enterprise multi-tenant cryptocurrency point-of-sale and e-commerce payment platform API')
+    .setDescription(
+      'Enterprise multi-tenant cryptocurrency point-of-sale and e-commerce payment platform API',
+    )
     .setVersion('2.0')
     .addBearerAuth(
       {
@@ -51,7 +57,8 @@ async function bootstrap() {
         type: 'apiKey',
         name: 'x-api-key',
         in: 'header',
-        description: 'Server/SDK secret or publishable API key (e.g. sk_live_..., pk_live_..., sk_test_...)',
+        description:
+          'Server/SDK secret or publishable API key (e.g. sk_live_..., pk_live_..., sk_test_...)',
       },
       'x-api-key',
     )
@@ -67,12 +74,26 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      docExpansion: 'list',
+      filter: true,
+    },
+    customSiteTitle: 'CryptoPOS API Documentation',
+  });
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`🚀 CryptoPOS Multi-Tenant Platform running on http://localhost:${port}`);
-  console.log(`📚 Interactive OpenAPI Swagger docs at http://localhost:${port}/api/docs`);
-  console.log(`⚡ WebSocket live gateway active at ws://localhost:${port}/payments`);
+  console.log(
+    `🚀 CryptoPOS Multi-Tenant Platform running on http://localhost:${port}`,
+  );
+  console.log(
+    `📚 Interactive OpenAPI Swagger docs at http://localhost:${port}/api/docs`,
+  );
+  console.log(
+    `⚡ WebSocket live gateway active at ws://localhost:${port}/payments`,
+  );
 }
 bootstrap();

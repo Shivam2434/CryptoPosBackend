@@ -5,7 +5,7 @@ import { QueueService } from './queue.service';
 
 @Global()
 @Module({
-    providers: [InMemoryQueueService, QueueService],
-    exports: [QueueService],
+  providers: [InMemoryQueueService, QueueService],
+  exports: [QueueService],
 })
-export class QueueModule { }
+export class QueueModule {}
