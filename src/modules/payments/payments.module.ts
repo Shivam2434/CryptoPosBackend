@@ -16,10 +16,6 @@ import { PaymentAddressService } from './address/payment-address.service';
 import { ExternalWalletAddressProvider } from './address/external-wallet-address.provider';
 import { MerchantStaticAddressProvider } from './address/merchant-static-address.provider';
 import { PoolAddressProvider } from './address/pool-address.provider';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard';
-import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
-import { CompositeAuthGuard } from '../../common/guards/composite-auth.guard';
 
 @Module({
   imports: [
@@ -40,19 +36,7 @@ import { CompositeAuthGuard } from '../../common/guards/composite-auth.guard';
     ExternalWalletAddressProvider,
     MerchantStaticAddressProvider,
     PoolAddressProvider,
-    JwtAuthGuard,
-    ApiKeyAuthGuard,
-    DeviceAuthGuard,
-    CompositeAuthGuard,
   ],
-  exports: [
-    PaymentsService,
-    PaymentsGateway,
-    PaymentAddressService,
-    CompositeAuthGuard,
-    JwtAuthGuard,
-    ApiKeyAuthGuard,
-    DeviceAuthGuard,
-  ],
+  exports: [PaymentsService, PaymentsGateway, PaymentAddressService],
 })
 export class PaymentsModule {}

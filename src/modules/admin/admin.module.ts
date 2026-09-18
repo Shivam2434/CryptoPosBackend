@@ -7,8 +7,6 @@ import { Role } from './entities/role.entity';
 import { AuditModule } from '../audit/audit.module';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
-import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { ScopeGuard } from '../../common/guards/scope.guard';
 
 @Module({
   imports: [
@@ -16,7 +14,7 @@ import { ScopeGuard } from '../../common/guards/scope.guard';
     AuditModule,
   ],
   controllers: [AdminController],
-  providers: [AdminService, PermissionsGuard, ScopeGuard],
-  exports: [AdminService, PermissionsGuard, ScopeGuard],
+  providers: [AdminService],
+  exports: [AdminService],
 })
 export class AdminModule {}

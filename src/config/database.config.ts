@@ -7,9 +7,9 @@ export const databaseConfig = registerAs(
   (): TypeOrmModuleOptions => ({
     type: 'postgres',
     host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5432,
-    username: process.env.DB_USERNAME || 'postgres',
-    password: process.env.DB_PASSWORD || 'password',
+    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5433,
+    username: process.env.DB_USERNAME || 'cryptopos',
+    password: process.env.DB_PASSWORD || 'cryptopos_password',
     database: process.env.DB_NAME || 'crypto_pos',
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
     migrations: [__dirname + '/../migrations/*{.ts,.js}'],

@@ -34,6 +34,7 @@ import { AdminModule } from './modules/admin/admin.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env.local', '.env'],
       load: [
         appConfig,
         databaseConfig,
@@ -48,9 +49,9 @@ import { AdminModule } from './modules/admin/admin.module';
         config.get<TypeOrmModuleOptions>('database') || {
           type: 'postgres',
           host: 'localhost',
-          port: 5432,
-          username: 'postgres',
-          password: 'password',
+          port: 5433,
+          username: 'cryptopos',
+          password: 'cryptopos_password',
           database: 'crypto_pos',
           entities: [__dirname + '/**/*.entity{.ts,.js}'],
           synchronize: true,
