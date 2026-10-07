@@ -1,14 +1,14 @@
 # CryptoPOS Backend 🚀
 
-Enterprise-grade NestJS REST API + WebSocket server powering the CryptoPOS multi-tenant payments platform. Designed for Australian merchants, point-of-sale terminals, and e-commerce integrations.
+Enterprise-grade NestJS REST API + WebSocket server powering the CryptoPOS multi-tenant cryptocurrency payments platform. Designed for Australian merchants, point-of-sale terminals, and e-commerce integrations with Clerk/OIDC authentication.
 
 ---
 
 ## 🎯 Features
 
-- 🔐 **Third-Party IdP Auth**: Vendor-agnostic OIDC/JWKS authentication (Auth0, AWS Cognito, Clerk, Supabase, Mock).
-- 💳 **External Wallet First MVP**: Self-custody receiving address validation (BTC, ETH, USDT, USDC) directly paying merchant wallets with zero platform custody or private key handling.
-- 🏢 **Multi-Tenant Hierarchy**: Organization (Tenant) ➔ Users & RBAC (`owner`, `admin`, `manager`, `cashier`) ➔ Merchants ➔ Locations ➔ Devices.
+- 🔐 **Clerk & Third-Party IdP Auth**: Cryptographic RS256 JWKS token verification for Clerk and OIDC providers with automatic user & tenant provisioning.
+- 💳 **Self-Custody Receiving MVP**: Direct payment receipt into merchant-controlled wallet addresses (BTC, ETH, USDT, USDC) with zero platform custody or private key storage.
+- 🏢 **Multi-Tenant Hierarchy**: Organization (Tenant) ➔ Users & RBAC (`owner`, `admin`, `manager`, `cashier`, `super_admin`, `sub_admin`) ➔ Merchants ➔ Locations ➔ Devices.
 - ⛓️ **Blockchain Monitoring**: Distributed, restart-safe transaction detection & confirmation tracking for Bitcoin and Ethereum (Native & ERC-20).
 - 💱 **Live AUD Pricing**: CoinGecko exchange rate polling with 30-second proactive cache and slippage buffer.
 - 🔴 **Real-Time WebSockets**: Socket.io channels for instant POS terminal screen updates (`payment_<id>`) and live store feeds (`org_<id>`).
@@ -23,10 +23,23 @@ Enterprise-grade NestJS REST API + WebSocket server powering the CryptoPOS multi
 - **Framework**: NestJS 11
 - **Language**: TypeScript 5.7 (Strict Mode)
 - **Database**: PostgreSQL 16 + TypeORM 0.3
-- **Authentication**: OIDC / JWKS (Native Node.js `crypto`) + RBAC
+- **Authentication**: Clerk / OIDC / JWKS (Native Node.js `crypto` RS256) + RBAC
 - **Blockchain**: `ethers.js` v6, `bitcoinjs-lib` v7, Blockstream REST API
 - **WebSockets**: Socket.io
 - **Documentation**: Swagger / OpenAPI 2.0 (`/api/docs`)
+
+---
+
+## 🔐 Authentication vs Authorization Boundary
+
+| Responsibility | Authority | Mechanism |
+|---|---|---|
+| User Authentication | **Clerk** (IdP) | Sign-in, sign-up, password handling, email OTP verification, session JWTs |
+| Session Token Verification | **CryptoPOS Backend** | Cryptographic verification via Clerk's JWKS endpoint (`/.well-known/jwks.json`) |
+| User Provisioning & Sync | **CryptoPOS Backend** | Idempotent sync on `POST /api/v1/auth/sync` |
+| Tenant & Merchant Context | **CryptoPOS Backend** | Organization isolation, merchant mapping, device pairing |
+| Role & Permission Enforcement | **CryptoPOS Backend** | `JwtAuthGuard`, `RolesGuard`, `PermissionsGuard`, `ScopeGuard` |
+| Super & Sub Admin Access | **CryptoPOS Backend** | Invite-only platform admin scoping |
 
 ---
 
@@ -41,7 +54,7 @@ backend/
 │   ├── common/                       # Guards, filters, decorators, interceptors
 │   ├── migrations/                   # PostgreSQL TypeORM migrations
 │   └── modules/
-│       ├── auth/                     # IdP token verification & profile sync
+│       ├── auth/                     # Clerk/OIDC adapter, token verification & profile sync
 │       ├── users/                    # Team management & RBAC roles
 │       ├── wallets/                  # External receiving addresses & validation
 │       ├── organizations/            # Tenant onboarding & settings
@@ -62,37 +75,47 @@ backend/
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Environment Variables
 
-### Prerequisites
-- Node.js 20+ LTS
-- PostgreSQL 16+
+Copy `.env.example` to `.env`:
 
-### Installation
+```env
+# ── Identity Provider (Clerk) ────────────────
+AUTH_PROVIDER=clerk
+AUTH_ISSUER_URL=https://distinct-porpoise-1594.clerk.accounts.dev
+AUTH_JWKS_URI=https://distinct-porpoise-1594.clerk.accounts.dev/.well-known/jwks.json
+# Optional: Server-side Clerk API Key (do not commit)
+# CLERK_SECRET_KEY=sk_test_...
 
-```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/crypto-pos-backend.git
-cd crypto-pos-backend
+# ── App & Database ───────────────────────────
+NODE_ENV=development
+PORT=3000
+DB_HOST=localhost
+DB_PORT=5433
+DB_USERNAME=cryptopos
+DB_PASSWORD=cryptopos_password
+DB_NAME=crypto_pos
 
-# Install dependencies
-npm install
-
-# Configure environment variables
-cp .env.example .env
+# ── JWT (Legacy / fallback internal) ─────────
+JWT_SECRET=crypto-pos-dev-secret-change-in-production-min-32-chars
+JWT_EXPIRES_IN=24h
 ```
 
-### Running the Server
+---
+
+## 🧪 Testing & Build
 
 ```bash
-# Development (with hot reload)
-npm run start:dev
-
 # Run unit tests
 npm run test
 
-# Production build
+# Run code linter
+npm run lint
+
+# Build production bundle
 npm run build
+
+# Start production server
 npm run start:prod
 ```
 
@@ -105,9 +128,9 @@ Server endpoints:
 
 ## 🔒 Security & Custody Boundary
 
-CryptoPOS operates strictly as a payment gateway and orchestration layer for the MVP:
+CryptoPOS operates strictly as a payment gateway and orchestration layer:
 - **CryptoPOS Stores**: Public receiving address, target network, asset type, friendly label.
-- **CryptoPOS NEVER Stores**: Private keys, seed phrases, or wallet credentials.
+- **CryptoPOS NEVER Stores**: Passwords (handled by Clerk), private keys, seed phrases, or wallet credentials.
 - **Merchant Controls**: Private keys, seed phrases, and direct self-custody receipt of all customer funds.
 
 ---
@@ -116,4 +139,3 @@ CryptoPOS operates strictly as a payment gateway and orchestration layer for the
 
 - **Email**: `hey@sharmashivam.com`
 - **Location**: Melbourne, Australia
-- **Documentation**: [CryptoPOS Handover Guide](file:///Users/shivamsharma/Downloads/Projects/crypto_pos/backend/PROJECT_STATE.md)

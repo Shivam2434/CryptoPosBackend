@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { OnboardingDto } from './dto/onboarding.dto';
 import { CreateMerchantDto } from '../merchants/dto/create-merchant.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentAuth } from '../../common/decorators/current-tenant.decorator';
@@ -74,6 +75,24 @@ export class AuthController {
     }
     const token = authHeader.substring(7).trim();
     return this.authService.syncUserProfile(token, orgHint);
+  }
+
+  @Post('onboarding')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Complete first-time user and merchant onboarding setup',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Onboarding completed and profile updated successfully',
+  })
+  async completeOnboarding(
+    @CurrentAuth() auth: AuthContext,
+    @Body() dto: OnboardingDto,
+  ) {
+    return this.authService.completeOnboarding(auth, dto);
   }
 
   /**

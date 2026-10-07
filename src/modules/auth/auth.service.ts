@@ -5,13 +5,14 @@ import * as bcrypt from 'bcrypt';
 import { MerchantsService } from '../merchants/merchants.service';
 import { CreateMerchantDto } from '../merchants/dto/create-merchant.dto';
 import { LoginDto } from './dto/login.dto';
+import { OnboardingDto } from './dto/onboarding.dto';
 import { IdentityProviderService } from './identity-provider/identity-provider.service';
 import { UsersService } from '../users/users.service';
 import {
   AuthContext,
   UserRole,
 } from '../../common/interfaces/auth-context.interface';
-import { UserStatus } from '../users/entities/user.entity';
+import { User, UserStatus } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -119,9 +120,62 @@ export class AuthService {
       throw new UnauthorizedException('User profile could not be synchronized');
     }
     const user = await this.usersService.findById(authContext.userId);
+    const merchant = await this.merchantsService
+      .getProfileForAuth(authContext)
+      .catch(() => null);
+
+    const isFirstTime =
+      !user.metadata?.onboardingCompleted &&
+      (!merchant ||
+        !merchant.businessName ||
+        merchant.businessName === 'CryptoPOS Merchant' ||
+        merchant.businessName.includes("'s Organization"));
+
     return {
       user,
+      merchant,
       authContext,
+      onboardingRequired: isFirstTime,
+    };
+  }
+
+  /**
+   * Complete first-time user and merchant onboarding setup
+   */
+  async completeOnboarding(auth: AuthContext, dto: OnboardingDto) {
+    const merchant = await this.merchantsService.getProfileForAuth(auth);
+    const updatedMerchant = await this.merchantsService.update(merchant.id, {
+      businessName: dto.businessName,
+      contactName: dto.contactName,
+      contactPhone: dto.contactPhone,
+      businessAbn: dto.businessAbn,
+      address: dto.address,
+      city: dto.city,
+      state: dto.state,
+      postcode: dto.postcode,
+      settlementPreference: dto.settlementPreference,
+      ethWalletAddress: dto.ethWalletAddress,
+      btcWalletAddress: dto.btcWalletAddress,
+      acceptedCryptos: dto.acceptedCryptos,
+    });
+
+    let updatedUser: User | null = null;
+    if (auth.userId) {
+      const user = await this.usersService.findById(auth.userId);
+      user.name = dto.contactName;
+      user.merchantId = updatedMerchant.id;
+      user.metadata = {
+        ...(user.metadata || {}),
+        onboardingCompleted: true,
+      };
+      updatedUser = await this.usersService.saveUser(user);
+    }
+
+    return {
+      user: updatedUser,
+      merchant: updatedMerchant,
+      authContext: auth,
+      onboardingRequired: false,
     };
   }
 

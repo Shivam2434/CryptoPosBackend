@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { IdentityProviderService } from './identity-provider.service';
 import { OidcIdentityProviderAdapter } from './adapters/oidc-identity-provider.adapter';
 import { MockIdentityProviderAdapter } from './adapters/mock-identity-provider.adapter';
+import { ClerkIdentityProviderAdapter } from './adapters/clerk-identity-provider.adapter';
 
 describe('IdentityProviderService', () => {
   let service: IdentityProviderService;
@@ -14,6 +15,7 @@ describe('IdentityProviderService', () => {
         IdentityProviderService,
         OidcIdentityProviderAdapter,
         MockIdentityProviderAdapter,
+        ClerkIdentityProviderAdapter,
         {
           provide: ConfigService,
           useValue: {

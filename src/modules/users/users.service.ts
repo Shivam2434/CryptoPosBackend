@@ -200,6 +200,10 @@ export class UsersService {
     return this.usersRepo.save(user);
   }
 
+  async saveUser(user: User): Promise<User> {
+    return this.usersRepo.save(user);
+  }
+
   async delete(
     organizationId: string,
     id: string,

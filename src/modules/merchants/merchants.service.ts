@@ -101,4 +101,62 @@ export class MerchantsService {
     await this.merchantsRepo.save(merchant);
     return { apiKey: merchant.apiKey };
   }
+
+  async getProfileForAuth(auth: any): Promise<Merchant> {
+    if (auth.merchantId) {
+      const merchant = await this.merchantsRepo.findOne({
+        where: { id: auth.merchantId },
+        relations: ['organization'],
+      });
+      if (merchant) {
+        delete merchant.password;
+        return merchant;
+      }
+    }
+
+    if (auth.organizationId) {
+      let merchant = await this.merchantsRepo.findOne({
+        where: { organizationId: auth.organizationId },
+        relations: ['organization'],
+      });
+
+      if (!merchant && auth.email) {
+        merchant = await this.merchantsRepo.findOne({
+          where: { email: auth.email },
+          relations: ['organization'],
+        });
+      }
+
+      if (!merchant) {
+        const apiKey = `cpk_${crypto.randomUUID().replace(/-/g, '')}`;
+        const newMerchant = this.merchantsRepo.create({
+          organizationId: auth.organizationId,
+          email: auth.email || `merchant_${Date.now()}@cryptopos.local`,
+          businessName: auth.businessName || auth.name || 'CryptoPOS Merchant',
+          contactName: auth.name || 'Store Owner',
+          status: MerchantStatus.ACTIVE,
+          apiKey,
+        });
+        merchant = await this.merchantsRepo.save(newMerchant);
+      }
+
+      delete merchant.password;
+      return merchant;
+    }
+
+    if (auth.email) {
+      const merchant = await this.merchantsRepo.findOne({
+        where: { email: auth.email },
+        relations: ['organization'],
+      });
+      if (merchant) {
+        delete merchant.password;
+        return merchant;
+      }
+    }
+
+    throw new NotFoundException(
+      'Merchant profile not found for authenticated context',
+    );
+  }
 }

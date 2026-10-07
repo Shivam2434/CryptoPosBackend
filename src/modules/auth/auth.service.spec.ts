@@ -52,6 +52,11 @@ describe('AuthService', () => {
       findById: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),
+      getProfileForAuth: jest.fn().mockResolvedValue({
+        id: 'merchant-1',
+        businessName: 'CryptoPOS Merchant',
+        email: 'merchant@pos.com',
+      }),
     };
 
     mockJwtService = {

@@ -1,8 +1,8 @@
-// src/modules/merchants/merchants.controller.ts
 import { Controller, Get, Put, Post, Body, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentAuth } from '../../common/decorators/current-tenant.decorator';
+import type { AuthContext } from '../../common/interfaces/auth-context.interface';
 import { MerchantsService } from './merchants.service';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 
@@ -15,26 +15,28 @@ export class MerchantsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get merchant profile' })
-  getProfile(@CurrentUser('id') merchantId: string) {
-    return this.merchantsService.findById(merchantId);
+  async getProfile(@CurrentAuth() auth: AuthContext) {
+    return this.merchantsService.getProfileForAuth(auth);
   }
 
   @Put('profile')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update merchant profile' })
-  updateProfile(
-    @CurrentUser('id') merchantId: string,
+  async updateProfile(
+    @CurrentAuth() auth: AuthContext,
     @Body() dto: UpdateMerchantDto,
   ) {
-    return this.merchantsService.update(merchantId, dto);
+    const merchant = await this.merchantsService.getProfileForAuth(auth);
+    return this.merchantsService.update(merchant.id, dto);
   }
 
   @Post('regenerate-api-key')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Regenerate API key' })
-  regenerateApiKey(@CurrentUser('id') merchantId: string) {
-    return this.merchantsService.regenerateApiKey(merchantId);
+  async regenerateApiKey(@CurrentAuth() auth: AuthContext) {
+    const merchant = await this.merchantsService.getProfileForAuth(auth);
+    return this.merchantsService.regenerateApiKey(merchant.id);
   }
 }

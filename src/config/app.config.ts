@@ -15,7 +15,13 @@ export const appConfig = registerAs('app', () => ({
 
 export const authConfig = registerAs('auth', () => ({
   provider: process.env.AUTH_PROVIDER || 'mock', // 'oidc' | 'auth0' | 'cognito' | 'clerk' | 'supabase' | 'mock'
-  issuerUrl: process.env.AUTH_ISSUER_URL || 'https://dev-auth.cryptopos.io/',
+  issuerUrl:
+    process.env.AUTH_ISSUER_URL ||
+    process.env.CLERK_ISSUER_URL ||
+    'https://dev-auth.cryptopos.io/',
+  clerkIssuerUrl: process.env.CLERK_ISSUER_URL,
+  clerkSecretKey:
+    process.env.CLERK_SECRET_KEY || process.env.AUTH_CLERK_SECRET_KEY,
   audience: process.env.AUTH_AUDIENCE || 'https://api.cryptopos.io',
   jwksUri: process.env.AUTH_JWKS_URI, // If custom JWKS endpoint
   clientId: process.env.AUTH_CLIENT_ID,

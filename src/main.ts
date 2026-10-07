@@ -13,12 +13,10 @@ async function bootstrap() {
   // Security
   app.use(helmet());
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-      'http://localhost:3001',
-      'http://localhost:8081',
-      'http://localhost:19006',
-    ],
+    origin: true,
     credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: '*',
   });
 
   // Global pipes, filters, interceptors
@@ -85,7 +83,7 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(
     `🚀 CryptoPOS Multi-Tenant Platform running on http://localhost:${port}`,
   );

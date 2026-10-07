@@ -13,6 +13,7 @@ import { DevicesModule } from '../devices/devices.module';
 import { IdentityProviderService } from './identity-provider/identity-provider.service';
 import { OidcIdentityProviderAdapter } from './identity-provider/adapters/oidc-identity-provider.adapter';
 import { MockIdentityProviderAdapter } from './identity-provider/adapters/mock-identity-provider.adapter';
+import { ClerkIdentityProviderAdapter } from './identity-provider/adapters/clerk-identity-provider.adapter';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard';
@@ -46,6 +47,7 @@ import { ScopeGuard } from '../../common/guards/scope.guard';
   providers: [
     OidcIdentityProviderAdapter,
     MockIdentityProviderAdapter,
+    ClerkIdentityProviderAdapter,
     IdentityProviderService,
     AuthService,
     JwtStrategy,

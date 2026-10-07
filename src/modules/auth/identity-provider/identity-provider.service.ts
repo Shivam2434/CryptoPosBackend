@@ -7,6 +7,7 @@ import {
 } from './identity-provider.interface';
 import { OidcIdentityProviderAdapter } from './adapters/oidc-identity-provider.adapter';
 import { MockIdentityProviderAdapter } from './adapters/mock-identity-provider.adapter';
+import { ClerkIdentityProviderAdapter } from './adapters/clerk-identity-provider.adapter';
 
 @Injectable()
 export class IdentityProviderService {
@@ -17,12 +18,13 @@ export class IdentityProviderService {
     private configService: ConfigService,
     private oidcAdapter: OidcIdentityProviderAdapter,
     private mockAdapter: MockIdentityProviderAdapter,
+    private clerkAdapter: ClerkIdentityProviderAdapter,
   ) {
     // Register default adapters
     this.registerAdapter('oidc', this.oidcAdapter);
     this.registerAdapter('auth0', this.oidcAdapter);
     this.registerAdapter('cognito', this.oidcAdapter);
-    this.registerAdapter('clerk', this.oidcAdapter);
+    this.registerAdapter('clerk', this.clerkAdapter);
     this.registerAdapter('supabase', this.oidcAdapter);
     this.registerAdapter('mock', this.mockAdapter);
   }
