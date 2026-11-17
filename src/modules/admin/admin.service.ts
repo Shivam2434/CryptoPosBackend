@@ -200,12 +200,24 @@ export class AdminService {
       throw new BadRequestException('This invitation has expired');
     }
 
-    // Determine Identity Provider credentials
-    const authProvider = dto.authProvider || callerAuth?.authProvider || 'oidc';
-    const authProviderUserId =
-      dto.authProviderUserId ||
-      callerAuth?.externalIdentityId ||
-      `sub_${crypto.randomUUID()}`;
+    if (!callerAuth?.externalIdentityId && !callerAuth?.userId) {
+      throw new ForbiddenException(
+        'Sign in with the invited account before accepting this invitation',
+      );
+    }
+
+    if (
+      callerAuth.email &&
+      callerAuth.email.toLowerCase() !== invitation.email.toLowerCase() &&
+      !callerAuth.email.includes('@clerk.user')
+    ) {
+      throw new ForbiddenException(
+        'This invitation was issued to a different email address',
+      );
+    }
+
+    const authProvider = callerAuth.authProvider || 'clerk';
+    const authProviderUserId = callerAuth.externalIdentityId || callerAuth.userId;
 
     // Find existing user or create a new user record
     let user = await this.usersRepo.findOne({

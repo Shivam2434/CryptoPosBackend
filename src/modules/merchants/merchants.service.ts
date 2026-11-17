@@ -3,6 +3,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,9 +13,12 @@ import { Merchant, MerchantStatus } from './entities/merchant.entity';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { generateMerchantDisplayCode } from '../../common/utils/display-code.util';
 
 @Injectable()
 export class MerchantsService {
+  private readonly logger = new Logger(MerchantsService.name);
+
   constructor(
     @InjectRepository(Merchant)
     private merchantsRepo: Repository<Merchant>,
@@ -42,6 +46,7 @@ export class MerchantsService {
 
     const merchant = this.merchantsRepo.create({
       ...dto,
+      displayCode: await this.allocateDisplayCode(),
       organizationId: org.id,
       password: hashedPassword,
       apiKey,
@@ -95,6 +100,12 @@ export class MerchantsService {
     return saved;
   }
 
+  async save(merchant: Merchant): Promise<Merchant> {
+    const saved = await this.merchantsRepo.save(merchant);
+    delete saved.password;
+    return saved;
+  }
+
   async regenerateApiKey(id: string): Promise<{ apiKey: string }> {
     const merchant = await this.findById(id);
     merchant.apiKey = `cpk_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -110,7 +121,7 @@ export class MerchantsService {
       });
       if (merchant) {
         delete merchant.password;
-        return merchant;
+        return this.ensureDisplayCode(merchant);
       }
     }
 
@@ -128,20 +139,13 @@ export class MerchantsService {
       }
 
       if (!merchant) {
-        const apiKey = `cpk_${crypto.randomUUID().replace(/-/g, '')}`;
-        const newMerchant = this.merchantsRepo.create({
-          organizationId: auth.organizationId,
-          email: auth.email || `merchant_${Date.now()}@cryptopos.local`,
-          businessName: auth.businessName || auth.name || 'CryptoPOS Merchant',
-          contactName: auth.name || 'Store Owner',
-          status: MerchantStatus.ACTIVE,
-          apiKey,
-        });
-        merchant = await this.merchantsRepo.save(newMerchant);
+        merchant = await this.provisionMerchantForAuth(auth);
       }
 
-      delete merchant.password;
-      return merchant;
+      if (merchant) {
+        delete merchant.password;
+        return this.ensureDisplayCode(merchant);
+      }
     }
 
     if (auth.email) {
@@ -151,12 +155,75 @@ export class MerchantsService {
       });
       if (merchant) {
         delete merchant.password;
-        return merchant;
+        return this.ensureDisplayCode(merchant);
       }
     }
 
     throw new NotFoundException(
       'Merchant profile not found for authenticated context',
     );
+  }
+
+  private async provisionMerchantForAuth(auth: any): Promise<Merchant | null> {
+    const email =
+      auth.email &&
+      !String(auth.email).includes('@clerk.user') &&
+      !String(auth.email).includes('@cryptopos.local') &&
+      !String(auth.email).startsWith('merchant_')
+        ? auth.email
+        : `pending.${String(auth.organizationId || 'store').replace(/-/g, '').slice(0, 8)}@cryptopos.local`;
+    const apiKey = `cpk_${crypto.randomUUID().replace(/-/g, '')}`;
+    const placeholderPassword = await bcrypt.hash(crypto.randomUUID(), 10);
+    const newMerchant = this.merchantsRepo.create({
+      displayCode: await this.allocateDisplayCode(),
+      organizationId: auth.organizationId,
+      email,
+      password: placeholderPassword,
+      businessName:
+        auth.businessName ||
+        (auth.name ? `${auth.name}'s Store` : 'CryptoPOS Merchant'),
+      contactName: auth.contactName || auth.name || 'Store Owner',
+      ethWalletAddress: auth.ethWalletAddress,
+      btcWalletAddress: auth.btcWalletAddress,
+      status: MerchantStatus.ACTIVE,
+      apiKey,
+    });
+
+    try {
+      const saved = await this.merchantsRepo.save(newMerchant);
+      this.logger.log(
+        `Provisioned merchant ${saved.id} for org ${auth.organizationId} (${saved.email})`,
+      );
+      return saved;
+    } catch (err: any) {
+      this.logger.error(
+        `Failed to provision merchant for org ${auth.organizationId}: ${err.message}`,
+      );
+      if (auth.email) {
+        return this.merchantsRepo.findOne({
+          where: { email: auth.email },
+          relations: ['organization'],
+        });
+      }
+      return this.merchantsRepo.findOne({
+        where: { organizationId: auth.organizationId },
+        relations: ['organization'],
+      });
+    }
+  }
+
+  private async allocateDisplayCode(): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const displayCode = generateMerchantDisplayCode();
+      const taken = await this.merchantsRepo.findOne({ where: { displayCode } });
+      if (!taken) return displayCode;
+    }
+    return generateMerchantDisplayCode(8);
+  }
+
+  private async ensureDisplayCode(merchant: Merchant): Promise<Merchant> {
+    if (merchant.displayCode) return merchant;
+    merchant.displayCode = await this.allocateDisplayCode();
+    return this.merchantsRepo.save(merchant);
   }
 }

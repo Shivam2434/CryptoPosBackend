@@ -24,6 +24,10 @@ export class Merchant {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ name: 'display_code', unique: true, nullable: true })
+  @Index()
+  displayCode?: string;
+
   @Column({ name: 'organization_id', nullable: true })
   @Index()
   organizationId?: string;
@@ -36,7 +40,7 @@ export class Merchant {
   @Index()
   email: string;
 
-  @Column({ select: true })
+  @Column({ select: true, nullable: true })
   password?: string;
 
   @Column({ name: 'business_name' })

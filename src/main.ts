@@ -12,11 +12,27 @@ async function bootstrap() {
 
   // Security
   app.use(helmet());
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const isDev = process.env.NODE_ENV !== 'production';
   app.enableCors({
-    origin: true,
+    origin: allowedOrigins.length
+      ? allowedOrigins
+      : isDev
+        ? true
+        : false,
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: '*',
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'x-api-key',
+      'x-device-token',
+      'x-organization-id',
+      'idempotency-key',
+    ],
   });
 
   // Global pipes, filters, interceptors
@@ -81,6 +97,17 @@ async function bootstrap() {
     },
     customSiteTitle: 'CryptoPOS API Documentation',
   });
+
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (!process.env.JWT_SECRET ||
+      process.env.JWT_SECRET.includes('change') ||
+      process.env.JWT_SECRET.length < 32)
+  ) {
+    throw new Error(
+      'JWT_SECRET must be set to a strong unique value in production',
+    );
+  }
 
   const port = process.env.PORT || 3000;
   await app.listen(port, '0.0.0.0');

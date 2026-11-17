@@ -14,6 +14,7 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import { UserRole } from '../../common/interfaces/auth-context.interface';
 import { AuditService } from '../audit/audit.service';
 import { AuditActorType } from '../audit/entities/audit-log.entity';
+import { isPlaceholderEmail, isRealEmail } from '../../common/utils/email.util';
 
 export interface ProvisionIdentityParams {
   provider: string;
@@ -50,14 +51,19 @@ export class UsersService {
       // Update last login timestamp
       user.lastLoginAt = new Date();
       if (identity.name && !user.name) user.name = identity.name;
+      if (isRealEmail(identity.email) && isPlaceholderEmail(user.email)) {
+        user.email = identity.email;
+      }
       return this.usersRepo.save(user);
     }
 
     // 2. Check if user already exists by email (link external provider)
-    user = await this.usersRepo.findOne({
-      where: { email: identity.email },
-      relations: ['organization'],
-    });
+    user = isRealEmail(identity.email)
+      ? await this.usersRepo.findOne({
+          where: { email: identity.email },
+          relations: ['organization'],
+        })
+      : null;
 
     if (user) {
       user.authProvider = identity.provider;
@@ -70,32 +76,20 @@ export class UsersService {
       return this.usersRepo.save(user);
     }
 
-    // 3. First-time provisioning: resolve or create organization
-    let organizationId = organizationIdOrSlug;
-    let isOwner = false;
-
-    if (organizationId) {
-      const existingOrg = await this.orgsService
-        .findById(organizationId)
-        .catch(() => null);
-      if (!existingOrg) {
-        const orgBySlug = await this.orgsService.findBySlug(organizationId);
-        organizationId = orgBySlug?.id;
-      }
-    }
-
-    if (!organizationId) {
-      // Provision default organization for this new user
-      const orgName = identity.name
-        ? `${identity.name}'s Organization`
-        : `${identity.email.split('@')[0]}'s Organization`;
-      const newOrg = await this.orgsService.create({
-        name: orgName,
-        billingEmail: identity.email,
-      });
-      organizationId = newOrg.id;
-      isOwner = true;
-    }
+    // 3. First-time provisioning: always create a NEW organization.
+    // Client-supplied organization IDs are ignored to prevent cross-tenant join.
+    void organizationIdOrSlug;
+    const orgName = identity.name
+      ? `${identity.name}'s Organization`
+      : isRealEmail(identity.email)
+        ? `${identity.email.split('@')[0]}'s Organization`
+        : 'New Organization';
+    const newOrg = await this.orgsService.create({
+      name: orgName,
+      billingEmail: identity.email,
+    });
+    const organizationId = newOrg.id;
+    const isOwner = true;
 
     const newUser = this.usersRepo.create({
       authProvider: identity.provider,
@@ -109,10 +103,28 @@ export class UsersService {
       lastLoginAt: new Date(),
     });
 
-    const savedUser = await this.usersRepo.save(newUser);
-    this.logger.log(
-      `Provisioned new user: ${savedUser.id} (${savedUser.email}) for Org: ${organizationId}`,
-    );
+    let savedUser: User;
+    try {
+      savedUser = await this.usersRepo.save(newUser);
+      this.logger.log(
+        `Provisioned new user: ${savedUser.id} (${savedUser.email}) for Org: ${organizationId}`,
+      );
+    } catch (saveError: any) {
+      this.logger.warn(
+        `⚠️ [findOrCreateFromIdentity] Conflict on user save, re-fetching user: ${saveError.message}`,
+      );
+      const existingUser = await this.usersRepo.findOne({
+        where: [
+          { authProvider: identity.provider, authProviderUserId: identity.providerUserId },
+          { email: identity.email },
+        ],
+        relations: ['organization'],
+      });
+      if (existingUser) {
+        return existingUser;
+      }
+      throw saveError;
+    }
 
     // Audit trail
     this.auditService

@@ -20,7 +20,7 @@ import { PaymentAddressService } from './address/payment-address.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { PaymentsGateway } from './payments.gateway';
 import { AuthContext } from '../../common/interfaces/auth-context.interface';
-import * as QRCode from 'qrcode';
+import { generatePaymentDisplayCode } from '../../common/utils/display-code.util';
 
 @Injectable()
 export class PaymentsService {
@@ -46,6 +46,16 @@ export class PaymentsService {
     if (!organizationId) {
       throw new BadRequestException(
         'Organization context is required to create a payment',
+      );
+    }
+    const scopes = auth.scopes || [];
+    const canWrite =
+      scopes.includes('*') ||
+      scopes.includes('payments:write') ||
+      scopes.includes('payments');
+    if (scopes.length && !canWrite) {
+      throw new BadRequestException(
+        'This credential is not permitted to create payments',
       );
     }
     const idempotencyKey = dto.idempotencyKey;
@@ -88,17 +98,13 @@ export class PaymentsService {
 
     const paymentAddress = addressResult.address;
 
-    // 4. Generate QR code
-    const qrData = this.generateQrData(
+    // 4. Wallet URI for the POS QR (EIP-681 / BIP-21). Store the URI, not a PNG —
+    // encoding a data-URL image into another QR exceeds QR capacity.
+    const qrCodeData = this.generateQrData(
       dto.cryptoType,
       paymentAddress,
       cryptoAmountWithBuffer,
     );
-    const qrCodeData = await QRCode.toDataURL(qrData, {
-      width: 300,
-      margin: 2,
-      color: { dark: '#000000', light: '#ffffff' },
-    });
 
     // 5. Compute expiry
     const timeoutMinutes =
@@ -115,7 +121,10 @@ export class PaymentsService {
       dto.network ||
       (environment === PaymentEnvironment.TEST ? 'sepolia' : 'mainnet');
 
+    const displayCode = await this.allocateDisplayCode();
+
     const payment = this.paymentsRepo.create({
+      displayCode,
       organizationId,
       merchantId: auth.merchantId,
       locationId: dto.locationId || auth.locationId,
@@ -163,10 +172,29 @@ export class PaymentsService {
 
   async getPayment(paymentId: string): Promise<Payment> {
     const payment = await this.paymentsRepo.findOne({
-      where: { id: paymentId },
+      where: [{ id: paymentId }, { displayCode: paymentId }],
     });
     if (!payment) throw new NotFoundException('Payment not found');
-    return payment;
+    return this.ensureDisplayCode(payment);
+  }
+
+  getPublicPaymentView(payment: Payment) {
+    return {
+      id: payment.id,
+      displayCode: payment.displayCode,
+      status: payment.status,
+      audAmount: payment.audAmount,
+      cryptoAmount: payment.cryptoAmount,
+      cryptoType: payment.cryptoType,
+      exchangeRate: payment.exchangeRate,
+      paymentAddress: payment.paymentAddress,
+      qrCodeData: payment.qrCodeData,
+      expiresAt: payment.expiresAt,
+      confirmations: payment.confirmations,
+      requiredConfirmations: payment.requiredConfirmations,
+      orderReference: payment.orderReference,
+      createdAt: payment.createdAt,
+    };
   }
 
   async getPaymentStatus(paymentId: string): Promise<{
@@ -204,8 +232,12 @@ export class PaymentsService {
       take: limit,
     });
 
+    const withCodes = await Promise.all(
+      payments.map((payment) => this.ensureDisplayCode(payment)),
+    );
+
     return {
-      payments,
+      payments: withCodes,
       pagination: {
         page,
         limit,
@@ -302,9 +334,25 @@ export class PaymentsService {
     }
   }
 
+  private async allocateDisplayCode(): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const displayCode = generatePaymentDisplayCode();
+      const taken = await this.paymentsRepo.findOne({ where: { displayCode } });
+      if (!taken) return displayCode;
+    }
+    throw new BadRequestException('Could not allocate a payment reference');
+  }
+
+  private async ensureDisplayCode(payment: Payment): Promise<Payment> {
+    if (payment.displayCode) return payment;
+    payment.displayCode = await this.allocateDisplayCode();
+    return this.paymentsRepo.save(payment);
+  }
+
   private formatPaymentEvent(payment: Payment): Record<string, any> {
     return {
       id: payment.id,
+      displayCode: payment.displayCode,
       organizationId: payment.organizationId,
       locationId: payment.locationId,
       deviceId: payment.deviceId,

@@ -65,6 +65,15 @@ export class AuthController {
     description: 'Synchronized user profile and tenant context',
   })
   async syncProfile(
+    @Body()
+    body?: {
+      email?: string;
+      name?: string;
+      businessName?: string;
+      contactName?: string;
+      ethWalletAddress?: string;
+      btcWalletAddress?: string;
+    },
     @Headers('authorization') authHeader?: string,
     @Headers('x-organization-id') orgHint?: string,
   ) {
@@ -74,7 +83,7 @@ export class AuthController {
       );
     }
     const token = authHeader.substring(7).trim();
-    return this.authService.syncUserProfile(token, orgHint);
+    return this.authService.syncUserProfile(token, orgHint, body);
   }
 
   @Post('onboarding')
@@ -106,6 +115,11 @@ export class AuthController {
     deprecated: true,
   })
   register(@Body() dto: CreateMerchantDto) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new UnauthorizedException(
+        'Password registration is disabled. Use Clerk sign-up.',
+      );
+    }
     return this.authService.register(dto);
   }
 
@@ -121,6 +135,11 @@ export class AuthController {
     deprecated: true,
   })
   login(@Body() dto: LoginDto) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new UnauthorizedException(
+        'Password login is disabled. Use Clerk sign-in.',
+      );
+    }
     return this.authService.login(dto);
   }
 }

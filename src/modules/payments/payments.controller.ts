@@ -66,8 +66,9 @@ export class PaymentsController {
   @ApiOperation({
     summary: 'Get payment details (Public - for customer checkout QR screen)',
   })
-  getPayment(@Param('id', ParseUUIDPipe) id: string) {
-    return this.paymentsService.getPayment(id);
+  async getPayment(@Param('id', ParseUUIDPipe) id: string) {
+    const payment = await this.paymentsService.getPayment(id);
+    return this.paymentsService.getPublicPaymentView(payment);
   }
 
   @Get(':id/status')

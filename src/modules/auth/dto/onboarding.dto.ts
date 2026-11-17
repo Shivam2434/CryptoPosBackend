@@ -20,6 +20,11 @@ export class OnboardingDto {
   @MinLength(2)
   contactName: string;
 
+  @ApiPropertyOptional({ example: 'owner@cafe.com.au', description: 'Business login email' })
+  @IsOptional()
+  @IsString()
+  email?: string;
+
   @ApiPropertyOptional({ example: '+61412345678', description: 'Contact phone number' })
   @IsOptional()
   @IsString()

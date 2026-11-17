@@ -1,5 +1,10 @@
 // src/modules/sandbox/sandbox.service.ts
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PaymentsService } from '../payments/payments.service';
 import {
@@ -7,6 +12,7 @@ import {
   PaymentEnvironment,
 } from '../payments/entities/payment.entity';
 import { SimulatePaymentTxDto } from './dto/simulate-payment.dto';
+import type { AuthContext } from '../../common/interfaces/auth-context.interface';
 
 @Injectable()
 export class SandboxService {
@@ -14,13 +20,20 @@ export class SandboxService {
 
   constructor(private paymentsService: PaymentsService) {}
 
-  async simulatePaymentTx(dto: SimulatePaymentTxDto) {
+  async simulatePaymentTx(dto: SimulatePaymentTxDto, auth: AuthContext) {
     const payment = await this.paymentsService.getPayment(dto.paymentId);
 
     if (
-      payment.environment !== PaymentEnvironment.TEST &&
-      process.env.NODE_ENV === 'production'
+      auth.organizationId &&
+      payment.organizationId !== auth.organizationId &&
+      !auth.isSuperAdmin
     ) {
+      throw new ForbiddenException(
+        'Cannot simulate payments outside your organization',
+      );
+    }
+
+    if (payment.environment !== PaymentEnvironment.TEST) {
       throw new BadRequestException(
         'Sandbox simulations are only permitted for test-mode payments',
       );

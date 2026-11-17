@@ -46,6 +46,10 @@ export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ name: 'display_code', unique: true, nullable: true })
+  @Index()
+  displayCode?: string;
+
   @Column({ name: 'organization_id' })
   @Index()
   organizationId: string;

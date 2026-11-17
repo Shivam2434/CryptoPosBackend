@@ -46,12 +46,15 @@ describe('AuthService', () => {
     mockUsersService = {
       findOrCreateFromIdentity: jest.fn(),
       findById: jest.fn(),
+      saveUser: jest.fn(async (user: User) => user),
     };
 
     mockMerchantsService = {
       findById: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
+      save: jest.fn(async (merchant) => merchant),
       getProfileForAuth: jest.fn().mockResolvedValue({
         id: 'merchant-1',
         businessName: 'CryptoPOS Merchant',
@@ -156,6 +159,50 @@ describe('AuthService', () => {
       expect(authContext.merchantId).toBe('merchant-1');
       expect(authContext.organizationId).toBe('org-1');
       expect(authContext.email).toBe('legacy@pos.com');
+    });
+  });
+
+  describe('completeOnboarding', () => {
+    it('updates merchant details and marks the user onboarded', async () => {
+      mockMerchantsService.getProfileForAuth.mockResolvedValueOnce({
+        id: 'merchant-1',
+        businessName: 'CryptoPOS Merchant',
+      });
+      mockMerchantsService.update.mockResolvedValueOnce({
+        id: 'merchant-1',
+        businessName: "Nik's Corner Cafe",
+        contactName: 'Nipun Kumar',
+        email: 'merchant@pos.com',
+      });
+      mockUsersService.findById.mockResolvedValueOnce({ ...mockUser, metadata: {} });
+
+      const result = await service.completeOnboarding(
+        {
+          userId: 'user-1',
+          organizationId: 'org-1',
+          merchantId: 'merchant-1',
+          environment: 'live',
+          scopes: ['*'],
+        } as any,
+        {
+          businessName: "Nik's Corner Cafe",
+          contactName: 'Nipun Kumar',
+          email: 'nikcafe@yopmail.com',
+          ethWalletAddress: '0x71C83893305a4155C198a2879F438cceE7C10753',
+          city: 'Beveridge',
+          state: 'VIC',
+        } as any,
+      );
+
+      expect(mockMerchantsService.update).toHaveBeenCalledWith(
+        'merchant-1',
+        expect.objectContaining({
+          businessName: "Nik's Corner Cafe",
+          contactName: 'Nipun Kumar',
+        }),
+      );
+      expect(result.onboardingRequired).toBe(false);
+      expect(result.user?.metadata?.onboardingCompleted).toBe(true);
     });
   });
 

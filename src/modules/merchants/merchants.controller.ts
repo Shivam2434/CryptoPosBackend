@@ -1,6 +1,9 @@
 import { Controller, Get, Put, Post, Body, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/interfaces/auth-context.interface';
 import { CurrentAuth } from '../../common/decorators/current-tenant.decorator';
 import type { AuthContext } from '../../common/interfaces/auth-context.interface';
 import { MerchantsService } from './merchants.service';
@@ -32,7 +35,8 @@ export class MerchantsController {
   }
 
   @Post('regenerate-api-key')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Regenerate API key' })
   async regenerateApiKey(@CurrentAuth() auth: AuthContext) {

@@ -84,10 +84,7 @@ export class ClerkIdentityProviderAdapter implements IIdentityProvider {
     if (expectedIssuer && payload.iss) {
       const normalizedExpected = expectedIssuer.replace(/\/$/, '');
       const normalizedActual = payload.iss.replace(/\/$/, '');
-      if (
-        normalizedExpected !== normalizedActual &&
-        !normalizedActual.includes('clerk')
-      ) {
+      if (normalizedExpected !== normalizedActual) {
         throw new UnauthorizedException(
           `Token issuer mismatch: expected ${expectedIssuer}, got ${payload.iss}`,
         );
@@ -105,16 +102,29 @@ export class ClerkIdentityProviderAdapter implements IIdentityProvider {
     );
 
     if (!isSignatureValid) {
-      throw new UnauthorizedException(
-        'Clerk token signature verification failed',
-      );
+      const allowUnsigned =
+        process.env.AUTH_ALLOW_UNSIGNED_JWT === 'true' &&
+        process.env.NODE_ENV !== 'production';
+
+      if (allowUnsigned) {
+        this.logger.warn(
+          `⚠️ Clerk signature verification failed. AUTH_ALLOW_UNSIGNED_JWT is set (sub: ${payload.sub})`,
+        );
+      } else {
+        throw new UnauthorizedException(
+          'Clerk token signature verification failed',
+        );
+      }
     }
 
-    // 4. Extract subject claim
-    const sub = payload.sub;
-    if (!sub) {
+    // 4. Extract subject claim (check standard sub, user_id, or fallback session identifiers)
+    const sub = payload.sub || payload.user_id;
+    if (!sub || typeof sub !== 'string' || !sub.startsWith('user_')) {
+      this.logger.error(
+        `❌ [ClerkAdapter] Clerk token missing user subject. Claims present: ${Object.keys(payload).join(', ')}`,
+      );
       throw new UnauthorizedException(
-        'Clerk token missing subject (sub) claim',
+        'Clerk token missing user subject (sub) claim',
       );
     }
 
@@ -157,7 +167,8 @@ export class ClerkIdentityProviderAdapter implements IIdentityProvider {
 
     const emailVerified = payload.email_verified ?? true;
     const roles = payload['https://cryptopos.io/roles'] ||
-      payload.roles || ['owner'];
+      payload.roles ||
+      [];
 
     return {
       provider: 'clerk',

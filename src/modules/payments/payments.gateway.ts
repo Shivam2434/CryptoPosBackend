@@ -8,6 +8,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { AuthService } from '../auth/auth.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -20,6 +21,8 @@ export class PaymentsGateway
   server: Server;
 
   private readonly logger = new Logger(PaymentsGateway.name);
+
+  constructor(private authService: AuthService) {}
 
   handleConnection(client: Socket) {
     this.logger.log(`WebSocket client connected: ${client.id}`);
@@ -41,11 +44,32 @@ export class PaymentsGateway
   }
 
   @SubscribeMessage('subscribe_organization')
-  handleSubscribeOrganization(client: Socket, organizationId: string) {
+  async handleSubscribeOrganization(
+    client: Socket,
+    payload: { organizationId?: string; token?: string } | string,
+  ) {
+    const organizationId =
+      typeof payload === 'string' ? payload : payload?.organizationId;
+    const token = typeof payload === 'string' ? undefined : payload?.token;
+    if (!organizationId || !token) {
+      this.logger.warn(
+        `Rejected unauthenticated org subscription from ${client.id}`,
+      );
+      return { error: 'Authentication token is required' };
+    }
+    try {
+      const auth = await this.authService.authenticateBearerToken(token);
+      if (auth.organizationId !== organizationId && !auth.isSuperAdmin) {
+        return { error: 'Not authorized for this organization' };
+      }
+    } catch {
+      return { error: 'Invalid authentication token' };
+    }
     client.join(`org_${organizationId}`);
     this.logger.log(
       `Client ${client.id} subscribed to org feed: ${organizationId}`,
     );
+    return { ok: true };
   }
 
   @SubscribeMessage('unsubscribe_organization')

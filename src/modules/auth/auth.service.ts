@@ -1,5 +1,10 @@
 // src/modules/auth/auth.service.ts
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { MerchantsService } from '../merchants/merchants.service';
@@ -13,6 +18,7 @@ import {
   UserRole,
 } from '../../common/interfaces/auth-context.interface';
 import { User, UserStatus } from '../users/entities/user.entity';
+import { isPlaceholderEmail, pickRealEmail } from '../../common/utils/email.util';
 
 @Injectable()
 export class AuthService {
@@ -39,6 +45,7 @@ export class AuthService {
 
     // 1. Try Third-Party Identity Provider verification
     try {
+      this.logger.debug(`🔑 [authenticateBearerToken] Verifying token via IdP (orgHint: ${orgHint || 'none'})`);
       const identity = await this.identityProviderService.verifyToken(token);
       const user = await this.usersService.findOrCreateFromIdentity(
         {
@@ -52,6 +59,25 @@ export class AuthService {
 
       if (user.status !== UserStatus.ACTIVE) {
         throw new UnauthorizedException(`User account is ${user.status}`);
+      }
+
+      if (!user.merchantId && user.organizationId) {
+        try {
+          const merchant = await this.merchantsService.getProfileForAuth({
+            organizationId: user.organizationId,
+            email: user.email,
+            name: user.name,
+            contactName: user.name,
+          });
+          if (merchant) {
+            user.merchantId = merchant.id;
+            await this.usersService.saveUser(user);
+          }
+        } catch (err: any) {
+          this.logger.warn(
+            `Could not provision merchant during auth for user ${user.id}: ${err.message}`,
+          );
+        }
       }
 
       const isSuper = user.role === UserRole.SUPER_ADMIN;
@@ -79,6 +105,7 @@ export class AuthService {
       };
     } catch (idpError) {
       // 2. Fallback: Check if it is a legacy internal JWT token for backward compatibility
+      this.logger.warn(`⚠️ [authenticateBearerToken] IdP verification failed: ${idpError.message} — trying legacy JWT fallback`);
       try {
         const legacyPayload = this.jwtService.verify(token);
         if (legacyPayload && legacyPayload.sub) {
@@ -102,8 +129,8 @@ export class AuthService {
         // Not a legacy token either
       }
 
-      this.logger.debug(
-        `Bearer token authentication failed: ${idpError.message}`,
+      this.logger.error(
+        `❌ [authenticateBearerToken] Both IdP and legacy JWT auth failed: ${idpError.message}`,
       );
       throw idpError instanceof UnauthorizedException
         ? idpError
@@ -114,15 +141,96 @@ export class AuthService {
   /**
    * Sync and retrieve user profile after IdP authentication
    */
-  async syncUserProfile(token: string, orgHint?: string) {
+  async syncUserProfile(
+    token: string,
+    orgHint?: string,
+    hintProfile?: {
+      email?: string;
+      name?: string;
+      businessName?: string;
+      contactName?: string;
+      ethWalletAddress?: string;
+      btcWalletAddress?: string;
+    },
+  ) {
+    this.logger.log(
+      `🔄 [syncUserProfile] Attempting profile sync. orgHint: ${orgHint || 'none'}, hintEmail: ${hintProfile?.email || 'none'}`,
+    );
     const authContext = await this.authenticateBearerToken(token, orgHint);
     if (!authContext.userId) {
+      this.logger.warn('⚠️ [syncUserProfile] No userId in authContext after token auth — rejecting.');
       throw new UnauthorizedException('User profile could not be synchronized');
     }
+    this.logger.log(`✅ [syncUserProfile] Token verified. userId: ${authContext.userId}, email: ${authContext.email}`);
     const user = await this.usersService.findById(authContext.userId);
-    const merchant = await this.merchantsService
-      .getProfileForAuth(authContext)
-      .catch(() => null);
+
+    const realEmail = pickRealEmail(hintProfile?.email, authContext.email, user.email);
+    if (realEmail && (isPlaceholderEmail(user.email) || user.email.toLowerCase() !== realEmail.toLowerCase())) {
+      user.email = realEmail;
+      if (hintProfile?.name && !user.name) user.name = hintProfile.name;
+      await this.usersService.saveUser(user);
+      this.logger.log(`📝 [syncUserProfile] Updated user ${user.id} email to: ${user.email}`);
+    } else if (hintProfile?.name && !user.name) {
+      user.name = hintProfile.name;
+      await this.usersService.saveUser(user);
+    }
+
+    const merchantLookup = {
+      ...authContext,
+      email: realEmail || hintProfile?.email || user.email,
+      name: hintProfile?.name || user.name,
+      contactName: hintProfile?.contactName || hintProfile?.name || user.name,
+      businessName: hintProfile?.businessName,
+      ethWalletAddress: hintProfile?.ethWalletAddress,
+      btcWalletAddress: hintProfile?.btcWalletAddress,
+    };
+
+    let merchant = await this.merchantsService
+      .getProfileForAuth(merchantLookup)
+      .catch((err) => {
+        this.logger.warn(`⚠️ [syncUserProfile] Could not load merchant profile: ${err.message}`);
+        return null;
+      });
+
+    if (merchant) {
+      let updated = false;
+      if (
+        hintProfile?.businessName &&
+        (!merchant.businessName ||
+          merchant.businessName === 'CryptoPOS Merchant' ||
+          merchant.businessName.includes("'s Organization"))
+      ) {
+        merchant.businessName = hintProfile.businessName;
+        updated = true;
+      }
+      if (
+        hintProfile?.contactName &&
+        (!merchant.contactName || merchant.contactName === 'Store Owner')
+      ) {
+        merchant.contactName = hintProfile.contactName;
+        updated = true;
+      }
+      if (hintProfile?.ethWalletAddress && !merchant.ethWalletAddress) {
+        merchant.ethWalletAddress = hintProfile.ethWalletAddress;
+        updated = true;
+      }
+      if (hintProfile?.btcWalletAddress && !merchant.btcWalletAddress) {
+        merchant.btcWalletAddress = hintProfile.btcWalletAddress;
+        updated = true;
+      }
+      if (updated) {
+        merchant = await this.merchantsService.save(merchant);
+        this.logger.log(
+          `📝 [syncUserProfile] Updated merchant ${merchant.id} with registration hints: ${merchant.businessName}`,
+        );
+      }
+    }
+
+    if (merchant && !user.merchantId) {
+      user.merchantId = merchant.id;
+      await this.usersService.saveUser(user);
+      this.logger.log(`🔗 [syncUserProfile] Linked user ${user.id} to merchant ${merchant.id}`);
+    }
 
     const isFirstTime =
       !user.metadata?.onboardingCompleted &&
@@ -131,10 +239,15 @@ export class AuthService {
         merchant.businessName === 'CryptoPOS Merchant' ||
         merchant.businessName.includes("'s Organization"));
 
+    this.logger.log(`📊 [syncUserProfile] User: ${user.email} | Merchant: ${merchant?.businessName || 'none'} | onboardingRequired: ${isFirstTime}`);
+
     return {
       user,
       merchant,
-      authContext,
+      authContext: {
+        ...authContext,
+        merchantId: merchant?.id || authContext.merchantId,
+      },
       onboardingRequired: isFirstTime,
     };
   }
@@ -143,8 +256,18 @@ export class AuthService {
    * Complete first-time user and merchant onboarding setup
    */
   async completeOnboarding(auth: AuthContext, dto: OnboardingDto) {
-    const merchant = await this.merchantsService.getProfileForAuth(auth);
-    const updatedMerchant = await this.merchantsService.update(merchant.id, {
+    this.logger.log(`🎓 [completeOnboarding] userId: ${auth.userId}, merchantId: ${auth.merchantId}, businessName: "${dto.businessName}"`);
+    if (!dto.ethWalletAddress?.trim() && !dto.btcWalletAddress?.trim()) {
+      throw new BadRequestException(
+        'Add at least one wallet address to receive payments',
+      );
+    }
+    const merchant = await this.merchantsService.getProfileForAuth({
+      ...auth,
+      email: pickRealEmail(dto.email, auth.email) || auth.email,
+    });
+    this.logger.log(`📦 [completeOnboarding] Found merchant: ${merchant.id} (${merchant.businessName})`);
+    let updatedMerchant = await this.merchantsService.update(merchant.id, {
       businessName: dto.businessName,
       contactName: dto.contactName,
       contactPhone: dto.contactPhone,
@@ -159,18 +282,29 @@ export class AuthService {
       acceptedCryptos: dto.acceptedCryptos,
     });
 
+    const realEmail = pickRealEmail(dto.email, auth.email, updatedMerchant.email);
+    if (realEmail && isPlaceholderEmail(updatedMerchant.email)) {
+      updatedMerchant.email = realEmail;
+      updatedMerchant = await this.merchantsService.save(updatedMerchant);
+    }
+
     let updatedUser: User | null = null;
     if (auth.userId) {
       const user = await this.usersService.findById(auth.userId);
       user.name = dto.contactName;
       user.merchantId = updatedMerchant.id;
+      if (realEmail && isPlaceholderEmail(user.email)) {
+        user.email = realEmail;
+      }
       user.metadata = {
         ...(user.metadata || {}),
         onboardingCompleted: true,
       };
       updatedUser = await this.usersService.saveUser(user);
+      this.logger.log(`✅ [completeOnboarding] User ${updatedUser.id} marked onboardingCompleted=true, linked to merchant ${updatedMerchant.id}`);
     }
 
+    this.logger.log(`🏁 [completeOnboarding] Done. Merchant: ${updatedMerchant.businessName} (${updatedMerchant.id})`);
     return {
       user: updatedUser,
       merchant: updatedMerchant,

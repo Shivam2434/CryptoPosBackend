@@ -125,8 +125,9 @@ describe('PaymentsService', () => {
     expect(result.paymentAddress).toBe(
       '0x71C568ba74D35b6F35cf91dD174F8B3e35199696',
     );
-    expect(result.qrCodeData).toContain('data:image/png;base64');
+    expect(result.qrCodeData).toMatch(/^ethereum:0x/i);
     expect(result.status).toBe(PaymentStatus.PENDING);
+    expect(result.displayCode).toMatch(/^INV-/);
     expect(webhooksService.dispatchEvent).toHaveBeenCalledWith(
       mockAuth.organizationId,
       'payment.created',

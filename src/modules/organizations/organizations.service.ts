@@ -21,12 +21,13 @@ export class OrganizationsService {
   ) {}
 
   async create(dto: CreateOrganizationDto): Promise<Organization> {
-    const slug = dto.slug || this.generateSlug(dto.name);
+    let slug = dto.slug || this.generateSlug(dto.name);
     const existing = await this.orgRepo.findOne({ where: { slug } });
     if (existing) {
-      throw new ConflictException(
-        `Organization with slug "${slug}" already exists`,
-      );
+      if (dto.billingEmail && existing.billingEmail === dto.billingEmail) {
+        return existing;
+      }
+      slug = `${slug}-${Date.now().toString(36).slice(-4)}`;
     }
 
     const org = this.orgRepo.create({
@@ -38,7 +39,13 @@ export class OrganizationsService {
       settings: dto.settings || {},
     });
 
-    return this.orgRepo.save(org);
+    try {
+      return await this.orgRepo.save(org);
+    } catch (saveError) {
+      const fallback = await this.orgRepo.findOne({ where: { slug } });
+      if (fallback) return fallback;
+      throw saveError;
+    }
   }
 
   async findById(id: string): Promise<Organization> {

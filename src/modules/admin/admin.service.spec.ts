@@ -204,12 +204,23 @@ describe('AdminService', () => {
       invitationsRepo.findOne.mockResolvedValue(pendingInv as AdminInvitation);
       usersRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.acceptInvitation({
-        token: rawToken,
-        name: 'Invited Admin',
-        authProvider: 'oidc',
-        authProviderUserId: 'auth0|12345',
-      });
+      const result = await service.acceptInvitation(
+        {
+          token: rawToken,
+          name: 'Invited Admin',
+        },
+        {
+          userId: 'invited-user',
+          email: 'invited@example.com',
+          authProvider: 'oidc',
+          externalIdentityId: 'auth0|12345',
+          organizationId: 'org-1',
+          role: UserRole.ADMIN,
+          environment: 'live',
+          scopes: ['*'],
+          authType: 'jwt',
+        } as any,
+      );
 
       expect(result.user).toBeDefined();
       expect(result.user.isPlatformAdmin).toBe(true);

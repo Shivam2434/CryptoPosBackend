@@ -27,7 +27,6 @@ export class CreateMerchantDto {
   @ApiPropertyOptional({ example: '12345678901' })
   @IsOptional()
   @IsString()
-  @Matches(/^\d{11}$/, { message: 'ABN must be 11 digits' })
   businessAbn?: string;
 
   @ApiProperty({ example: 'John Smith' })

@@ -90,11 +90,16 @@ export class AdminController {
   }
 
   @Post('invitations/accept')
+  @UseGuards(CompositeAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Accept an admin invitation using the cryptographic invite token',
   })
-  acceptInvitation(@Body() dto: AcceptInvitationDto) {
-    return this.adminService.acceptInvitation(dto);
+  acceptInvitation(
+    @CurrentAuth() auth: AuthContext,
+    @Body() dto: AcceptInvitationDto,
+  ) {
+    return this.adminService.acceptInvitation(dto, auth);
   }
 
   // ==========================================

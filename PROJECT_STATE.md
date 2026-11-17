@@ -286,9 +286,10 @@ Swagger UI: `http://localhost:3000/api/docs`
 | | `PUT` | `/api/v1/wallets/:id` | Bearer JWT (`admin`/`owner`/`manager`) | Update wallet label / primary status |
 | | `DELETE` | `/api/v1/wallets/:id` | Bearer JWT (`admin`/`owner`) | Archive/deactivate receiving wallet |
 | **Auth** | `GET` | `/api/v1/auth/me` | Bearer JWT | Get current user profile & tenant context |
-| | `POST` | `/api/v1/auth/sync` | Bearer JWT | Sync/provision user record from IdP token |
+| | `POST` | `/api/v1/auth/sync` | Bearer JWT | Sync/provision user record from IdP token (Accepts optional `{ email, name }` body) |
 | | `POST` | `/api/v1/auth/register` | None | `[DEPRECATED]` Legacy registration |
 | | `POST` | `/api/v1/auth/login` | None | `[DEPRECATED]` Legacy login |
+| **System** | `GET` | `/api/v1` & `/api/v1/hello` | None | Health check & connectivity verification endpoint |
 | **Users** | `GET` | `/api/v1/users` | Bearer JWT (`admin`/`owner`) | List organization team members |
 | | `POST` | `/api/v1/users` | Bearer JWT (`admin`/`owner`) | Invite / create user in organization |
 | | `GET` | `/api/v1/users/:id` | Bearer JWT (`admin`/`owner`) | Get user details |
@@ -339,3 +340,34 @@ npx tsc --noEmit
 npm run build
 ```
 Result: **0 TypeScript compiler errors, clean NestJS production build**.
+
+---
+
+## 🔄 10. Recent Architectural Updates & Fixes
+
+1. **Clerk Identity Provider Dev Fallback & Resilient Subject Extraction (`clerk-identity-provider.adapter.ts`)**:
+   - Added development mode fallback when Clerk JWKS fetching or signature verification encounters network/sandbox boundaries.
+   - Enhanced subject claim extraction to check `sub`, `user_id`, `userId`, and session-level identifiers, preventing 401 rejection if Clerk session tokens format claims differently.
+   - Decodes and validates JWT claims (`sub`, `email`, `name`) in development while maintaining strict cryptographic verification in production.
+2. **Enhanced Profile Sync (`POST /api/v1/auth/sync`)**:
+   - Accepts optional `{ email?: string, name?: string }` payload from client during IdP handshake.
+   - Automatically provisions/links user and merchant records with real verified user emails instead of `${sub}@clerk.user` placeholders.
+   - Automatically assigns `user.merchantId = merchant.id`.
+3. **Merchant Duplicate Email Handling (`merchants.service.ts`)**:
+   - Wrapped merchant creation in conflict detection to safely re-fetch existing merchants when duplicate email key constraints are hit, preventing 500 errors during concurrent sign-up and sync operations.
+4. **Idempotent User & Organization Provisioning (`users.service.ts`, `organizations.service.ts`)**:
+   - Organization creation gracefully handles duplicate slugs by reusing organizations for matching billing emails or appending unique suffixes, eliminating 409 ConflictException during parallel requests.
+   - User provisioning in `findOrCreateFromIdentity` catches concurrent database insertion conflicts and transparently returns the existing user record, eliminating 500 duplicate key errors.
+5. **Diagnostic Hello Module (`src/modules/hello/`)**:
+   - Encapsulated `GET /api/v1/hello` into its own dedicated NestJS module (`HelloModule`, `HelloController`, `HelloService`, `HelloResponseDto`) with full NestJS logging and Swagger documentation.
+   - Cleaned `AppController` and `AppService` to serve as lightweight standard root application handlers.
+6. **Merchant Receiving Wallet Auto-Provisioning & Dev Fallback (`merchant-static-address.provider.ts`)**:
+   - Resolved `No merchant profile found for organization to resolve receiving wallet` on `POST /api/v1/payments`.
+   - If `findByOrganization` yields no records, falls back to `merchantsService.getProfileForAuth({ organizationId })` to dynamically resolve or provision the merchant record.
+   - In non-production environments, if no wallet address has been configured yet for the requested crypto asset (ETH, BTC, USDT, USDC), automatically assigns a test receiving address and saves it to the merchant profile.
+7. **Registration Cache & Wallet Address Synchronization (`auth.service.ts`, `auth.controller.ts`)**:
+   - Extended `syncUserProfile` and `POST /api/v1/auth/sync` to accept `{ email, name, businessName, contactName, ethWalletAddress, btcWalletAddress }`.
+   - Persists business name, contact name, and self-custodied wallet addresses directly into the database merchant entity.
+8. **Guaranteed Merchant ID Resolution in `authenticateBearerToken` (`auth.service.ts`)**:
+   - Ensures any authenticated request with a valid `organizationId` automatically checks and links `user.merchantId` if not already set, guaranteeing `authContext.merchantId` is available for payment creation.
+

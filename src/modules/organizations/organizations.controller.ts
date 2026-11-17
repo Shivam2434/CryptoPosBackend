@@ -13,6 +13,8 @@ export class OrganizationsController {
   constructor(private orgsService: OrganizationsService) {}
 
   @Post()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new organization (tenant onboarding)' })
   create(@Body() dto: CreateOrganizationDto) {
     return this.orgsService.create(dto);

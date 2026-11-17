@@ -41,7 +41,11 @@ export class ApiKeysService {
       keyHash,
       keyType,
       environment,
-      scopes: dto.scopes || ['*'],
+      scopes:
+        dto.scopes ||
+        (keyType === ApiKeyType.PUBLISHABLE
+          ? ['payments:read']
+          : ['*']),
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
     });
 

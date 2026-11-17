@@ -1,9 +1,12 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import {
   appConfig,
   authConfig,
@@ -29,8 +32,10 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SandboxModule } from './modules/sandbox/sandbox.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { HelloModule } from './modules/hello/hello.module';
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
@@ -57,7 +62,18 @@ import { AdminModule } from './modules/admin/admin.module';
           synchronize: true,
         },
     }),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 1000 }]),
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 1000,
+        limit: 30,
+      },
+      {
+        name: 'medium',
+        ttl: 60000,
+        limit: 300,
+      },
+    ]),
     ScheduleModule.forRoot(),
     QueueModule,
     AuditModule,
@@ -77,6 +93,14 @@ import { AdminModule } from './modules/admin/admin.module';
     SandboxModule,
     WalletsModule,
     AdminModule,
+    HelloModule,
+  ],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}
